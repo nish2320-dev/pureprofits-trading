@@ -140,6 +140,7 @@
 
   <div class="tabs" id="tabs">
     <button class="tab-btn active" data-tab="overview">Overview</button>
+    <button class="tab-btn" data-tab="daily">Daily P&amp;L</button>
     <button class="tab-btn" data-tab="log">Trade Log</button>
     <button class="tab-btn" data-tab="monthly">Monthly Report</button>
     <button class="tab-btn" data-tab="plan">Risk Plan</button>
@@ -163,6 +164,27 @@
     <section class="card">
       <div class="cardhead"><h2><span class="dot" style="background:#6ee7b7"></span>Recent Trades</h2></div>
       <div class="table-scroll"><table id="tbl-recent"></table></div>
+    </section>
+  </div>
+
+  <!-- DAILY P&L -->
+  <div class="panel" id="panel-daily">
+    <div class="stat-grid" id="daily-tiles"></div>
+
+    <section class="card">
+      <div class="cardhead"><h2><span class="dot" style="background:#6ee7b7"></span>Daily P&amp;L</h2></div>
+      <div class="table-scroll"><table id="tbl-daily"></table></div>
+    </section>
+
+    <section class="card">
+      <div class="cardhead"><h2><span class="dot" style="background:var(--violet)"></span>By Setup Grade</h2></div>
+      <div class="note rule" id="setup-insight"></div>
+      <div class="table-scroll"><table id="tbl-setup"></table></div>
+    </section>
+
+    <section class="card">
+      <div class="cardhead"><h2><span class="dot" style="background:var(--warning)"></span>By Ticker</h2></div>
+      <div class="table-scroll"><table id="tbl-ticker"></table></div>
     </section>
   </div>
 
@@ -393,6 +415,72 @@ function monthlyBreakdown() {
   return Object.entries(map).sort((a,b) => a[0].localeCompare(b[0]));
 }
 
+function dailyBreakdown() {
+  const closed = closedTrades();
+  const map = {};
+  closed.forEach(t => {
+    const d = t.date;
+    if (!map[d]) map[d] = { date: d, pnl: 0, trades: 0, wins: 0, losses: 0 };
+    map[d].pnl += (t.pnl || 0);
+    map[d].trades += 1;
+    if ((t.pnl||0) > 0) map[d].wins += 1;
+    else if ((t.pnl||0) < 0) map[d].losses += 1;
+  });
+  return Object.values(map).sort((a,b) => b.date.localeCompare(a.date));
+}
+
+function dailyStats() {
+  const days = dailyBreakdown();
+  const winDays = days.filter(d => d.pnl > 0);
+  const lossDays = days.filter(d => d.pnl < 0);
+  const flatDays = days.filter(d => d.pnl === 0);
+  const winDayRate = days.length ? (winDays.length/days.length*100) : 0;
+  const avgWinDay = winDays.length ? winDays.reduce((s,d)=>s+d.pnl,0)/winDays.length : 0;
+  const avgLossDay = lossDays.length ? lossDays.reduce((s,d)=>s+d.pnl,0)/lossDays.length : 0;
+  const best = days.reduce((b,d) => (!b || d.pnl > b.pnl) ? d : b, null);
+  const worst = days.reduce((w,d) => (!w || d.pnl < w.pnl) ? d : w, null);
+
+  // days[] is sorted most-recent-first — walk it to find the current win/loss streak
+  let streak = 0, streakType = null;
+  for (const d of days) {
+    const type = d.pnl > 0 ? 'win' : d.pnl < 0 ? 'loss' : null;
+    if (type === null) break;
+    if (streakType === null) { streakType = type; streak = 1; }
+    else if (type === streakType) { streak++; }
+    else break;
+  }
+
+  return { days, winDays, lossDays, flatDays, winDayRate, avgWinDay, avgLossDay, best, worst, streak, streakType };
+}
+
+function setupBreakdown() {
+  const closed = closedTrades();
+  const map = {};
+  closed.forEach(t => {
+    const key = t.setup && t.setup.trim() ? t.setup.trim() : 'Untagged';
+    if (!map[key]) map[key] = { setup: key, trades: 0, wins: 0, losses: 0, pnl: 0 };
+    map[key].trades += 1;
+    map[key].pnl += (t.pnl||0);
+    if ((t.pnl||0) > 0) map[key].wins += 1;
+    else if ((t.pnl||0) < 0) map[key].losses += 1;
+  });
+  return Object.values(map).sort((a,b) => b.pnl - a.pnl);
+}
+
+function tickerBreakdown() {
+  const closed = closedTrades();
+  const map = {};
+  closed.forEach(t => {
+    const key = t.ticker;
+    if (!map[key]) map[key] = { ticker: key, trades: 0, wins: 0, losses: 0, pnl: 0 };
+    map[key].trades += 1;
+    map[key].pnl += (t.pnl||0);
+    if ((t.pnl||0) > 0) map[key].wins += 1;
+    else if ((t.pnl||0) < 0) map[key].losses += 1;
+  });
+  return Object.values(map).sort((a,b) => b.pnl - a.pnl);
+}
+
 // ---------------- RENDER ----------------
 function renderAll() {
   renderStatTiles();
@@ -403,6 +491,10 @@ function renderAll() {
   renderReportTiles();
   renderMonthlyBars();
   renderPlanNumbers();
+  renderDailyTiles();
+  renderDailyTable();
+  renderSetupTable();
+  renderTickerTable();
 }
 
 function renderStatTiles() {
@@ -541,6 +633,92 @@ function renderMonthlyBars() {
       <div class="${pnl>=0?'pos':'neg'}" style="text-align:right; font-weight:600;">${fmt$(pnl)}</div>
     </div>`;
   }).join('');
+}
+
+function renderDailyTiles() {
+  const ds = dailyStats();
+  const tiles = [
+    { label: "Winning Days", value: String(ds.winDays.length), cls: ds.winDays.length ? 'good' : '', sub: ds.days.length + " days tracked" },
+    { label: "Losing Days", value: String(ds.lossDays.length), cls: ds.lossDays.length ? 'bad' : '', sub: ds.flatDays.length + " flat" },
+    { label: "Win Day Rate", value: ds.days.length ? ds.winDayRate.toFixed(1)+"%" : "—", sub: "green days ÷ days traded" },
+    { label: "Avg Winning Day", value: ds.winDays.length ? fmt$(ds.avgWinDay) : "—", cls: ds.winDays.length ? 'good' : '', sub: "per green day" },
+    { label: "Avg Losing Day", value: ds.lossDays.length ? fmt$(ds.avgLossDay) : "—", cls: ds.lossDays.length ? 'bad' : '', sub: "per red day" },
+    { label: "Current Streak", value: ds.streak ? ds.streak + (ds.streak>1?' days':' day') : "—",
+      cls: ds.streakType==='win'?'good':(ds.streakType==='loss'?'bad':''), sub: ds.streakType ? (ds.streakType==='win'?'winning':'losing') + " streak" : "no closed days yet" },
+    { label: "Best Day", value: ds.best ? fmt$(ds.best.pnl) : "—", cls: ds.best && ds.best.pnl>0 ? 'good' : '', sub: ds.best ? ds.best.date : "" },
+    { label: "Worst Day", value: ds.worst ? fmt$(ds.worst.pnl) : "—", cls: ds.worst && ds.worst.pnl<0 ? 'bad' : '', sub: ds.worst ? ds.worst.date : "" },
+  ];
+  $('daily-tiles').innerHTML = tiles.map(t => `
+    <div class="stat-tile">
+      <div class="stat-label">${t.label}</div>
+      <div class="stat-value ${t.cls||''}">${t.value}</div>
+      <div class="stat-sub">${t.sub}</div>
+    </div>`).join('');
+}
+
+function renderDailyTable() {
+  const days = dailyBreakdown();
+  const el = $('tbl-daily');
+  if (!days.length) { el.innerHTML = `<tbody><tr><td class="empty">No closed trades yet.</td></tr></tbody>`; return; }
+  el.innerHTML = `<thead><tr><th>Date</th><th>Trades</th><th>Wins</th><th>Losses</th><th>Day P&L</th><th>Result</th></tr></thead>
+    <tbody>${days.map(d => `
+      <tr>
+        <td class="sym">${d.date}</td>
+        <td>${d.trades}</td>
+        <td>${d.wins}</td>
+        <td>${d.losses}</td>
+        <td class="${d.pnl>=0?'pos':'neg'}">${fmt$(d.pnl)}</td>
+        <td><span class="badge ${d.pnl>0?'long':(d.pnl<0?'short':'open')}">${d.pnl>0?'Win':(d.pnl<0?'Loss':'Flat')}</span></td>
+      </tr>`).join('')}</tbody>`;
+}
+
+function renderSetupTable() {
+  const rows = setupBreakdown();
+  const el = $('tbl-setup');
+  if (!rows.length) { el.innerHTML = `<tbody><tr><td class="empty">No closed trades yet.</td></tr></tbody>`; $('setup-insight').textContent = ''; return; }
+  el.innerHTML = `<thead><tr><th>Setup</th><th>Trades</th><th>Wins</th><th>Losses</th><th>Win Rate</th><th>Total P&L</th><th>Avg P&L</th></tr></thead>
+    <tbody>${rows.map(r => `
+      <tr>
+        <td class="sym">${r.setup}</td>
+        <td>${r.trades}</td>
+        <td>${r.wins}</td>
+        <td>${r.losses}</td>
+        <td>${r.trades ? (r.wins/r.trades*100).toFixed(0)+'%' : '—'}</td>
+        <td class="${r.pnl>=0?'pos':'neg'}">${fmt$(r.pnl)}</td>
+        <td class="${r.pnl>=0?'pos':'neg'}">${fmt$(r.pnl/r.trades)}</td>
+      </tr>`).join('')}</tbody>`;
+
+  const tagged = rows.filter(r => r.setup !== 'Untagged');
+  const totalTrades = rows.reduce((s,r) => s + r.trades, 0);
+  const worstSetup = tagged.filter(r => r.pnl < 0 && r.losses >= r.wins).sort((a,b) => a.pnl - b.pnl)[0];
+  const untagged = rows.find(r => r.setup === 'Untagged');
+  let msg;
+  if (!tagged.length) {
+    msg = "None of your trades are tagged with a setup grade (A+ through D) yet — tag trades on the Trade Log tab so this table can find real patterns instead of grouping by ticker/description.";
+  } else if (worstSetup) {
+    msg = `Pattern found: "${worstSetup.setup}" is net ${fmt$(worstSetup.pnl)} over ${worstSetup.trades} trades (${worstSetup.losses} losses vs ${worstSetup.wins} wins) — your clearest setup to cut or size down.`;
+  } else if (untagged && untagged.trades > totalTrades / 2) {
+    msg = `Most trades (${untagged.trades} of ${totalTrades}) aren't tagged with a setup grade — tag more consistently to sharpen this pattern read.`;
+  } else {
+    msg = "No setup grade is a clear net loser yet — keep tagging trades to build a bigger sample before drawing conclusions.";
+  }
+  $('setup-insight').textContent = msg;
+}
+
+function renderTickerTable() {
+  const rows = tickerBreakdown();
+  const el = $('tbl-ticker');
+  if (!rows.length) { el.innerHTML = `<tbody><tr><td class="empty">No closed trades yet.</td></tr></tbody>`; return; }
+  el.innerHTML = `<thead><tr><th>Ticker</th><th>Trades</th><th>Wins</th><th>Losses</th><th>Win Rate</th><th>Total P&L</th></tr></thead>
+    <tbody>${rows.map(r => `
+      <tr>
+        <td class="sym">${r.ticker}</td>
+        <td>${r.trades}</td>
+        <td>${r.wins}</td>
+        <td>${r.losses}</td>
+        <td>${r.trades ? (r.wins/r.trades*100).toFixed(0)+'%' : '—'}</td>
+        <td class="${r.pnl>=0?'pos':'neg'}">${fmt$(r.pnl)}</td>
+      </tr>`).join('')}</tbody>`;
 }
 
 function renderPlanNumbers() {
