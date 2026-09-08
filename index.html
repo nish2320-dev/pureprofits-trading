@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Trading Journal</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --surface-2: #212120;
+    --surface-3: #292927;
+    --page: #0d0d0d;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted: #898781;
+    --grid: #2c2c2a;
+    --border: rgba(255,255,255,0.10);
+    --good: #0ca30c;
+    --good-bg: rgba(12,163,12,0.14);
+    --critical: #e66767;
+    --critical-bg: rgba(230,103,103,0.14);
+    --warning: #fab219;
+    --warning-bg: rgba(250,178,25,0.12);
+    --blue: #3987e5;
+    --blue-bg: rgba(57,135,229,0.14);
+    --violet: #9085e9;
+    --violet-bg: rgba(144,133,233,0.14);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--page); color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1320px; margin: 0 auto; padding: 20px 20px 60px; }
+
+  header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+    padding: 18px 22px; background: linear-gradient(135deg, #14231c, #171512);
+    border: 1px solid var(--border); border-radius: 14px; margin-bottom: 18px; }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .brand-mark { font-weight: 800; letter-spacing: 3px; font-size: 20px;
+    background: linear-gradient(90deg, #ffffff, #6ee7b7); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  h1 { font-size: 19px; margin: 0; font-weight: 700; }
+  .sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+  .sync-pill { font-size: 11.5px; font-weight: 700; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--border); display:flex; align-items:center; gap:6px; }
+  .sync-pill.live { color: #7fe07f; background: var(--good-bg); border-color: rgba(12,163,12,0.3); }
+  .sync-pill.off { color: #ffd98a; background: var(--warning-bg); border-color: rgba(250,178,25,0.3); }
+  .dotlive { width:6px; height:6px; border-radius:50%; background: currentColor; }
+
+  .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 18px; border-bottom: 1px solid var(--grid); }
+  .tab-btn { background: transparent; border: none; color: var(--text-secondary); font-size: 13.5px; font-weight: 600;
+    padding: 10px 16px; cursor: pointer; border-radius: 8px 8px 0 0; border-bottom: 2px solid transparent; transition: all .15s ease; }
+  .tab-btn:hover { color: var(--text-primary); background: var(--surface-2); }
+  .tab-btn.active { color: var(--text-primary); border-bottom: 2px solid #6ee7b7; }
+  .panel { display: none; }
+  .panel.active { display: block; animation: fade .18s ease; }
+  @keyframes fade { from { opacity: 0; transform: translateY(3px);} to {opacity:1; transform:none;} }
+
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); gap: 10px; margin-bottom: 18px; }
+  .stat-tile { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+  .stat-label { font-size: 10.5px; letter-spacing: 0.8px; color: var(--text-muted); font-weight: 700; text-transform: uppercase; }
+  .stat-value { font-size: 22px; font-weight: 700; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .stat-value.good { color: #7fe07f; }
+  .stat-value.bad { color: #ff9d9d; }
+  .stat-sub { font-size: 11.5px; color: var(--text-secondary); margin-top: 4px; font-variant-numeric: tabular-nums; }
+
+  section.card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 14px; padding: 18px; margin-bottom: 18px; }
+  section.card h2 { font-size: 15px; margin: 0 0 12px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+  section.card h2 .dot { width: 8px; height: 8px; border-radius: 50%; }
+  section.card .cardhead { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; flex-wrap:wrap; gap:8px; }
+  section.card .cardhead h2 { margin: 0; }
+
+  .note { border-radius: 10px; padding: 12px 16px; font-size: 13px; line-height: 1.5; margin-bottom: 14px; border: 1px solid var(--border); }
+  .note.warn { background: var(--warning-bg); color: #ffd98a; border-color: rgba(250,178,25,0.3); }
+  .note.info { background: var(--blue-bg); color: #bcd9ff; border-color: rgba(57,135,229,0.3); }
+  .note.rule { background: var(--surface-2); color: var(--text-secondary); }
+
+  .table-scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th { text-align: left; font-size: 10.5px; letter-spacing: 0.6px; text-transform: uppercase; color: var(--text-muted);
+    font-weight: 700; padding: 8px 10px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+  tbody td { padding: 9px 10px; border-bottom: 1px solid var(--grid); color: var(--text-secondary); font-variant-numeric: tabular-nums; vertical-align: top; }
+  tbody tr:hover { background: var(--surface-2); }
+  tbody tr:last-child td { border-bottom: none; }
+  td.sym { color: var(--text-primary); font-weight: 700; font-variant-numeric: normal; white-space: nowrap; }
+  td.pos { color: #7fe07f; font-weight: 600; }
+  td.neg { color: #ff9d9d; font-weight: 600; }
+  .badge { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 5px; letter-spacing: 0.4px; }
+  .badge.long { background: var(--good-bg); color: #7fe07f; }
+  .badge.short { background: var(--critical-bg); color: #ff9d9d; }
+  .badge.open { background: var(--warning-bg); color: #ffd98a; }
+  .rowbtn { background: transparent; border: 1px solid var(--border); color: var(--text-secondary); border-radius: 6px;
+    padding: 3px 8px; font-size: 11px; cursor: pointer; margin-right: 4px; }
+  .rowbtn:hover { color: var(--text-primary); background: var(--surface-3); }
+
+  .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 12px; }
+  .field label { display: block; font-size: 11px; color: var(--text-muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 5px; }
+  .field input, .field select, .field textarea {
+    width: 100%; background: var(--surface-2); border: 1px solid var(--border); color: var(--text-primary);
+    padding: 8px 10px; border-radius: 8px; font-size: 13.5px; font-family: inherit; }
+  .field textarea { resize: vertical; min-height: 38px; }
+  .form-actions { display: flex; gap: 10px; align-items: center; }
+  .btn { background: linear-gradient(135deg,#1c5cab,#3987e5); color: #fff; border: none; border-radius: 8px;
+    padding: 9px 18px; font-size: 13.5px; font-weight: 700; cursor: pointer; }
+  .btn:hover { filter: brightness(1.08); }
+  .btn.ghost { background: var(--surface-2); border: 1px solid var(--border); color: var(--text-secondary); }
+  .btn.danger { background: var(--critical-bg); color: #ff9d9d; border: 1px solid rgba(230,103,103,0.3); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .chart-wrap { width: 100%; overflow-x: auto; }
+  .rule-box { background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px;
+    font-size: 13px; line-height: 1.6; color: var(--text-secondary); margin-bottom: 10px; }
+  .rule-box b { color: var(--text-primary); }
+  .rule-box.good { border-left: 3px solid var(--good); }
+  .rule-box.bad { border-left: 3px solid var(--critical); }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 800px) { .two-col { grid-template-columns: 1fr; } .form-grid { grid-template-columns: repeat(2,1fr); } }
+
+  .month-bar-row { display: grid; grid-template-columns: 90px 1fr 90px; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--grid); font-size: 13px; }
+  .month-bar-row:last-child { border-bottom: none; }
+  .bar-track { height: 10px; background: var(--surface-2); border-radius: 5px; overflow: hidden; position: relative; }
+  .bar-fill { height: 100%; border-radius: 5px; }
+  .bar-fill.pos { background: var(--good); }
+  .bar-fill.neg { background: var(--critical); }
+
+  footer { text-align: center; color: var(--text-muted); font-size: 11.5px; margin-top: 24px; }
+  .empty { text-align: center; padding: 30px 10px; color: var(--text-muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="brand">
+      <div>
+        <div class="brand-mark">PUREPROFITS</div>
+        <div class="sub" id="account-name">Trading Journal</div>
+      </div>
+    </div>
+    <div id="sync-pill" class="sync-pill off"><span class="dotlive"></span> Connecting…</div>
+  </header>
+
+  <div class="tabs" id="tabs">
+    <button class="tab-btn active" data-tab="overview">Overview</button>
+    <button class="tab-btn" data-tab="log">Trade Log</button>
+    <button class="tab-btn" data-tab="monthly">Monthly Report</button>
+    <button class="tab-btn" data-tab="plan">Risk Plan</button>
+  </div>
+
+  <!-- OVERVIEW -->
+  <div class="panel active" id="panel-overview">
+    <div class="note info" id="db-banner" style="display:none;">This is a static snapshot published to GitHub Pages. The data below is current as of the last publish — any edits you make here are local to your browser only and won't be saved.</div>
+    <div class="stat-grid" id="stat-tiles"></div>
+
+    <section class="card">
+      <div class="cardhead"><h2><span class="dot" style="background:var(--blue)"></span>Equity Curve</h2></div>
+      <div class="chart-wrap"><svg id="equity-chart" width="100%" height="260" viewBox="0 0 1000 260" preserveAspectRatio="none"></svg></div>
+    </section>
+
+    <section class="card">
+      <div class="cardhead"><h2><span class="dot" style="background:var(--warning)"></span>Open Positions</h2></div>
+      <div class="table-scroll"><table id="tbl-open"></table></div>
+    </section>
+
+    <section class="card">
+      <div class="cardhead"><h2><span class="dot" style="background:#6ee7b7"></span>Recent Trades</h2></div>
+      <div class="table-scroll"><table id="tbl-recent"></table></div>
+    </section>
+  </div>
+
+  <!-- TRADE LOG -->
+  <div class="panel" id="panel-log">
+    <section class="card">
+      <div class="cardhead">
+        <h2><span class="dot" style="background:var(--blue)"></span><span id="form-title">Add Trade</span></h2>
+        <div>
+          <button class="btn ghost" id="export-csv-btn">⬇ Export CSV</button>
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="field"><label>Date</label><input type="date" id="f-date"></div>
+        <div class="field"><label>Ticker</label><input type="text" id="f-ticker" placeholder="AAPL" style="text-transform:uppercase;"></div>
+        <div class="field"><label>Side</label>
+          <select id="f-side"><option value="long">Long</option><option value="short">Short</option></select>
+        </div>
+        <div class="field"><label>Shares / Contracts</label><input type="number" id="f-shares" step="any" placeholder="100"></div>
+        <div class="field"><label>Entry Price (optional)</label><input type="number" id="f-entry" step="any" placeholder="leave blank if unknown yet"></div>
+        <div class="field"><label>Exit Price (blank = open)</label><input type="number" id="f-exit" step="any" placeholder="153.10"></div>
+        <div class="field"><label>Setup</label>
+          <select id="f-setup">
+            <option value="">—</option>
+            <option value="A+">A+ (with trend)</option>
+            <option value="A-">A- (with trend)</option>
+            <option value="B+">B+ (with trend)</option>
+            <option value="B-">B- (against trend)</option>
+            <option value="C">C (against trend)</option>
+            <option value="D">D (against trend)</option>
+          </select>
+        </div>
+        <div class="field" style="grid-column: span 2;"><label>Notes</label><input type="text" id="f-notes" placeholder="Why you took it / how it played out"></div>
+      </div>
+      <div class="form-actions">
+        <button class="btn" id="save-trade-btn">Save Trade</button>
+        <button class="btn ghost" id="cancel-edit-btn" style="display:none;">Cancel edit</button>
+        <span id="form-msg" style="font-size:12.5px; color: var(--text-muted);"></span>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="cardhead">
+        <h2><span class="dot" style="background:#6ee7b7"></span>All Trades</h2>
+        <input type="text" id="log-search" placeholder="Filter by ticker or notes…" style="background:var(--surface-2); border:1px solid var(--border); color:var(--text-primary); padding:8px 12px; border-radius:8px; font-size:13px; min-width:200px;">
+      </div>
+      <div class="table-scroll"><table id="tbl-log"></table></div>
+    </section>
+
+    <section class="card">
+      <h2><span class="dot" style="background:var(--violet)"></span>Account Settings</h2>
+      <div class="form-grid" style="grid-template-columns: repeat(auto-fit, minmax(180px,1fr));">
+        <div class="field"><label>Account Name</label><input type="text" id="s-name"></div>
+        <div class="field"><label>Starting Balance ($)</label><input type="number" id="s-balance" step="any"></div>
+        <div class="field"><label>Tracking Start Date</label><input type="date" id="s-startdate"></div>
+      </div>
+      <button class="btn ghost" id="save-settings-btn">Save Settings</button>
+      <span id="settings-msg" style="font-size:12.5px; color: var(--text-muted); margin-left:10px;"></span>
+    </section>
+  </div>
+
+  <!-- MONTHLY REPORT -->
+  <div class="panel" id="panel-monthly">
+    <section class="card">
+      <div class="cardhead"><h2><span class="dot" style="background:var(--blue)"></span>Performance Summary</h2></div>
+      <div class="stat-grid" id="report-tiles"></div>
+    </section>
+    <section class="card">
+      <h2><span class="dot" style="background:#6ee7b7"></span>Monthly P&amp;L</h2>
+      <div id="monthly-bars"></div>
+    </section>
+    <div class="note rule">Want a polished, shareable version of this for investors (PDF or one-pager)? Just ask — I'll pull the latest numbers from this log and put one together whenever you need it.</div>
+  </div>
+
+  <!-- RISK PLAN -->
+  <div class="panel" id="panel-plan">
+    <section class="card">
+      <h2><span class="dot" style="background:var(--critical)"></span>Risk Management Rules</h2>
+      <div class="note warn">This is a starting template based on common risk-management practices, not personalized financial advice — adjust the percentages to fit your own risk tolerance and account, and tell me if you want them changed.</div>
+      <div class="two-col">
+        <div class="rule-box good"><b>Risk per trade — 1% of account.</b> At <span id="plan-equity-1">—</span> equity, that's about <b id="plan-risk-per-trade">—</b> max loss (from entry to stop) on any single trade.</div>
+        <div class="rule-box bad"><b>Max daily loss — 3% of account.</b> About <b id="plan-daily-loss">—</b>. Hit it → stop trading for the day, no exceptions.</div>
+      </div>
+      <div class="two-col">
+        <div class="rule-box"><b>Max weekly loss — 6% of account.</b> About <b id="plan-weekly-loss">—</b>. Hit it → cut size in half until a green week resets it.</div>
+        <div class="rule-box"><b>Position sizing:</b> shares = (account × 1%) ÷ (entry price − stop price). Round down. Never size up to "make it back."</div>
+      </div>
+      <div class="rule-box">Prioritize A+, A-, B+ setups (trend-aligned — EMA clouds over the 34/50 for longs, under for shorts). B-, C, D setups are counter-trend and lower probability — take them smaller, or skip them, per the Tenet playbook.</div>
+      <div class="rule-box">Journal every trade the same day it closes — ticker, setup, what worked or didn't. Review the log weekly: cut what's not working, size up what is.</div>
+    </section>
+    <section class="card">
+      <h2><span class="dot" style="background:#eda100"></span>Growth Goals (editable — tell me your targets)</h2>
+      <div class="rule-box">Placeholder targets — replace with your own: <b>3–6% net per month</b>, <b>consistency over swing-for-the-fences months</b>, no single month down more than the 6% weekly-loss guardrail above would allow across 4 weeks.</div>
+    </section>
+    <section class="card">
+      <h2><span class="dot" style="background:#eda100"></span>What Investors Typically Want to See</h2>
+      <div class="rule-box">Monthly return %, YTD return %, max drawdown, win rate, and a short note on what changed that month. The Monthly Report tab tracks the numbers; ask me anytime for a formatted document to send.</div>
+    </section>
+  </div>
+
+  <footer>Trading Journal — static snapshot published via GitHub Pages. Regenerated periodically from the live journal.</footer>
+</div>
+
+<script>
+// ---------------- STATE ----------------
+let db = null;
+// Static snapshot (last synced from the live journal on 2026-09-08). GitHub Pages has no
+// backend, so this list is baked in at publish time rather than loaded live.
+let trades = [
+  { id: "2026-09-08-amd", date: "2026-09-08", ticker: "AMD", side: "long", shares: 25, entry: 505.55, exit: 507.47, status: "closed", pnl: 48, setup: "", notes: "Closed 25 shares: entry 505.55, exit 507.47." },
+  { id: "2026-09-08-asts", date: "2026-09-08", ticker: "ASTS", side: "long", shares: 75, entry: 64.73, exit: 65.86, status: "closed", pnl: 208.88, setup: "", notes: "Multiple round-trip scalps per Account Statement. Verified total Day P/L: $208.88." },
+  { id: "2026-09-08-be", date: "2026-09-08", ticker: "BE", side: "long", shares: 25, entry: 277.25, exit: 278.965, status: "closed", pnl: 486.63, setup: "", notes: "Multiple round-trip scalps per Account Statement. Verified total Day P/L: $486.63." },
+  { id: "2026-09-08-crdo", date: "2026-09-08", ticker: "CRDO", side: "long", shares: 50, entry: 173.11, exit: 174.975, status: "closed", pnl: 146.5, setup: "", notes: "Bought 100 @173.11. Sold 50 @174.175 + 50 @174.975. Verified Day P/L: $146.50." },
+  { id: "2026-09-08-nbis", date: "2026-09-08", ticker: "NBIS", side: "long", shares: 20, entry: 239.26, exit: 251.36, status: "closed", pnl: 295.2, setup: "", notes: "Bought 20 @238.49 + 20 @239.26. Sold 20 @241.15 + 20 @251.36. Verified Day P/L: $295.20." },
+  { id: "2026-09-08-nvda", date: "2026-09-08", ticker: "NVDA", side: "long", shares: 20, entry: 1.975, exit: 1.9235, status: "closed", pnl: -96, setup: "227.5 Put (weekly)", notes: "Bought 10@1.98 + 10@1.97 (avg 1.975), sold 18@1.90 + 2@2.17 (avg 1.9235). PnL = -$96.00, x100 multiplier." },
+  { id: "2026-09-08-rklb", date: "2026-09-08", ticker: "RKLB", side: "long", shares: 100, entry: 66.92, exit: 66.26, status: "closed", pnl: -65.5, setup: "", notes: "Exact exit 66.265 per Account Statement. Verified Day P/L: -$65.50." },
+  { id: "2026-09-08-smci", date: "2026-09-08", ticker: "SMCI", side: "long", shares: 100, entry: 40.65, exit: 40.67, status: "closed", pnl: 2, setup: "", notes: "Closed 100 shares @ 40.67 (entry 40.65)." },
+  { id: "2026-09-08-spcx", date: "2026-09-08", ticker: "SPCX", side: "long", shares: 1, entry: null, exit: null, status: "closed", pnl: 152, setup: "11 SEP 26 155 Call, 1 contract", notes: "Corrected using thinkorswim's actual Day P/L for this leg (+$152.00) — earlier estimate from chat-relayed fill prices (2.228/2.66) was wrong." },
+  { id: "2026-09-08-spy-767p", date: "2026-09-08", ticker: "SPY", side: "long", shares: 25, entry: 1, exit: 1.1, status: "closed", pnl: 250, setup: "767 Put (weekly)", notes: "SPY 767P, 25 contracts, avg entry 1.00, avg exit 1.10. Verified against Account Statement." },
+  { id: "2026-09-08-spy-768p", date: "2026-09-08", ticker: "SPY", side: "long", shares: 20, entry: 1.16, exit: 1.25, status: "closed", pnl: 180, setup: "768 Put (weekly)", notes: "Bought 10@1.15 + 10@1.17 (avg 1.16), sold 20@1.25. PnL = +$180.00, x100 multiplier." },
+  { id: "2026-09-08-tsla-3575c", date: "2026-09-08", ticker: "TSLA", side: "long", shares: null, entry: null, exit: null, status: "closed", pnl: 6, setup: "357.5 Call exp 9/9/26 (weekly)", notes: "Corrected leg — originally mislogged as a 270 call. PnL from thinkorswim's Day P/L for this leg (+$6.00); exact fills not yet provided." },
+  { id: "2026-09-08-tsla-3625c", date: "2026-09-08", ticker: "TSLA", side: "long", shares: null, entry: null, exit: null, status: "closed", pnl: 379, setup: "362.5 Call exp 9/9/26 (weekly)", notes: "Corrected leg — originally mislogged as a 270 call. PnL from thinkorswim's Day P/L for this leg (+$379.00); exact fills not yet provided." },
+  { id: "2026-09-08-tsla-370c", date: "2026-09-08", ticker: "TSLA", side: "long", shares: null, entry: null, exit: null, status: "closed", pnl: 163, setup: "370 Call exp 9/9/26 (weekly)", notes: "Corrected leg — originally mislogged as a 270 call. PnL from thinkorswim's Day P/L for this leg (+$163.00); exact fills not yet provided." },
+];
+let settings = { name: "Pureprofits Trading Account", startingBalance: 46939.90, startDate: "2026-09-08" };
+let editingId = null;
+let unsubTrades = null, unsubSettings = null;
+
+const $ = (id) => document.getElementById(id);
+const fmt$ = (n) => (n < 0 ? "-$" : "$") + Math.abs(n).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+const fmtPct = (n) => (n >= 0 ? "+" : "") + n.toFixed(2) + "%";
+const todayStr = () => new Date().toISOString().slice(0,10);
+
+function computePnl(t) {
+  if (t.exit == null || t.exit === "" || isNaN(t.exit)) return null;
+  if (t.entry == null || t.entry === "" || isNaN(t.entry)) return null;
+  const diff = t.side === "short" ? (t.entry - t.exit) : (t.exit - t.entry);
+  return diff * t.shares;
+}
+
+// ---------------- DB INIT ----------------
+async function initDb() {
+  try {
+    db = await claude.use("db");
+  } catch (e) { db = null; }
+  if (!db) {
+    $('db-banner').style.display = 'block';
+    setSyncPill(false);
+    renderAll(); // trades[] already seeded with the static snapshot above
+    return;
+  }
+  setSyncPill(true);
+
+  const settingsRef = db.doc("account/settings");
+  unsubSettings = settingsRef.onSnapshot((snap) => {
+    if (snap.exists) {
+      const d = snap.data();
+      settings = {
+        name: d.name || settings.name,
+        startingBalance: typeof d.startingBalance === "number" ? d.startingBalance : settings.startingBalance,
+        startDate: d.startDate || settings.startDate,
+      };
+    } else {
+      // seed defaults on first load
+      settingsRef.set(settings).catch(() => {});
+    }
+    $('account-name').textContent = settings.name;
+    $('s-name').value = settings.name;
+    $('s-balance').value = settings.startingBalance;
+    $('s-startdate').value = settings.startDate;
+    renderAll();
+  }, (err) => { console.error(err); });
+
+  const tradesCol = db.collection("trades");
+  unsubTrades = tradesCol.orderBy("date", "asc").onSnapshot((qsnap) => {
+    trades = qsnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderAll();
+  }, (err) => { console.error(err); });
+}
+
+function setSyncPill(live) {
+  const el = $('sync-pill');
+  if (live) { el.className = 'sync-pill live'; el.innerHTML = '<span class="dotlive"></span> Live — saved for real'; }
+  else { el.className = 'sync-pill off'; el.innerHTML = '<span class="dotlive"></span> Preview (not saved)'; }
+}
+
+// ---------------- DERIVED DATA ----------------
+function closedTrades() { return trades.filter(t => t.status === 'closed').sort((a,b) => a.date.localeCompare(b.date)); }
+function openTrades() { return trades.filter(t => t.status === 'open'); }
+
+function equitySeries() {
+  const closed = closedTrades();
+  let bal = settings.startingBalance;
+  const pts = [{ date: settings.startDate, balance: bal }];
+  closed.forEach(t => { bal += (t.pnl || 0); pts.push({ date: t.date, balance: bal }); });
+  return pts;
+}
+
+function stats() {
+  const closed = closedTrades();
+  const totalPnl = closed.reduce((s,t) => s + (t.pnl||0), 0);
+  const wins = closed.filter(t => (t.pnl||0) > 0);
+  const losses = closed.filter(t => (t.pnl||0) < 0);
+  const winRate = closed.length ? (wins.length / closed.length * 100) : 0;
+  const avgWin = wins.length ? wins.reduce((s,t)=>s+t.pnl,0)/wins.length : 0;
+  const avgLoss = losses.length ? losses.reduce((s,t)=>s+t.pnl,0)/losses.length : 0;
+  const grossWin = wins.reduce((s,t)=>s+t.pnl,0);
+  const grossLoss = Math.abs(losses.reduce((s,t)=>s+t.pnl,0));
+  const profitFactor = grossLoss > 0 ? (grossWin / grossLoss) : (grossWin > 0 ? Infinity : 0);
+
+  const series = equitySeries();
+  let peak = series[0].balance, maxDD = 0;
+  series.forEach(p => { peak = Math.max(peak, p.balance); maxDD = Math.max(maxDD, peak > 0 ? (peak - p.balance)/peak*100 : 0); });
+
+  const now = new Date();
+  const ymNow = now.toISOString().slice(0,7);
+  const thisMonthPnl = closed.filter(t => (t.date||"").slice(0,7) === ymNow).reduce((s,t)=>s+t.pnl,0);
+
+  const currentEquity = settings.startingBalance + totalPnl;
+  return { totalPnl, totalPnlPct: totalPnl/settings.startingBalance*100, currentEquity, winRate, avgWin, avgLoss,
+    profitFactor, maxDD, thisMonthPnl, totalTrades: closed.length, openCount: openTrades().length };
+}
+
+function monthlyBreakdown() {
+  const closed = closedTrades();
+  const map = {};
+  closed.forEach(t => { const ym = (t.date||"").slice(0,7); map[ym] = (map[ym]||0) + t.pnl; });
+  return Object.entries(map).sort((a,b) => a[0].localeCompare(b[0]));
+}
+
+// ---------------- RENDER ----------------
+function renderAll() {
+  renderStatTiles();
+  renderChart();
+  renderOpenTable();
+  renderRecentTable();
+  renderLogTable($('log-search') ? $('log-search').value : '');
+  renderReportTiles();
+  renderMonthlyBars();
+  renderPlanNumbers();
+}
+
+function renderStatTiles() {
+  const s = stats();
+  const tiles = [
+    { label: "Current Equity", value: fmt$(s.currentEquity), sub: settings.name },
+    { label: "Total P&L", value: fmt$(s.totalPnl), cls: s.totalPnl>=0?'good':'bad', sub: fmtPct(s.totalPnlPct) + " since " + settings.startDate },
+    { label: "This Month", value: fmt$(s.thisMonthPnl), cls: s.thisMonthPnl>=0?'good':'bad', sub: new Date().toLocaleString('default',{month:'long',year:'numeric'}) },
+    { label: "Win Rate", value: s.totalTrades ? s.winRate.toFixed(1)+"%" : "—", sub: s.totalTrades + " closed trades" },
+    { label: "Profit Factor", value: isFinite(s.profitFactor) ? s.profitFactor.toFixed(2) : "∞", sub: "gross win ÷ gross loss" },
+    { label: "Max Drawdown", value: s.maxDD.toFixed(1)+"%", sub: "peak to trough" },
+    { label: "Open Positions", value: String(s.openCount), sub: "unrealized, not in P&L yet" },
+  ];
+  $('stat-tiles').innerHTML = tiles.map(t => `
+    <div class="stat-tile">
+      <div class="stat-label">${t.label}</div>
+      <div class="stat-value ${t.cls||''}">${t.value}</div>
+      <div class="stat-sub">${t.sub}</div>
+    </div>`).join('');
+}
+
+function renderReportTiles() {
+  const s = stats();
+  const tiles = [
+    { label: "Starting Balance", value: fmt$(settings.startingBalance), sub: settings.startDate },
+    { label: "Current Equity", value: fmt$(s.currentEquity), sub: "as of latest trade" },
+    { label: "Total Return", value: fmtPct(s.totalPnlPct), cls: s.totalPnl>=0?'good':'bad', sub: fmt$(s.totalPnl) + " net" },
+    { label: "Max Drawdown", value: s.maxDD.toFixed(1)+"%", sub: "worst peak-to-trough" },
+    { label: "Win Rate", value: s.totalTrades ? s.winRate.toFixed(1)+"%" : "—", sub: s.totalTrades + " trades" },
+    { label: "Avg Win / Avg Loss", value: fmt$(s.avgWin) + " / " + fmt$(s.avgLoss), sub: "per closed trade" },
+  ];
+  $('report-tiles').innerHTML = tiles.map(t => `
+    <div class="stat-tile">
+      <div class="stat-label">${t.label}</div>
+      <div class="stat-value ${t.cls||''}">${t.value}</div>
+      <div class="stat-sub">${t.sub}</div>
+    </div>`).join('');
+}
+
+function renderChart() {
+  const svg = $('equity-chart');
+  const series = equitySeries();
+  const W = 1000, H = 260, padL = 60, padR = 20, padT = 20, padB = 30;
+  if (series.length < 2) {
+    svg.innerHTML = `<text x="${W/2}" y="${H/2}" fill="#898781" font-size="13" text-anchor="middle">No closed trades yet — add one on the Trade Log tab to start the equity curve.</text>`;
+    return;
+  }
+  const balances = series.map(p => p.balance);
+  let min = Math.min(...balances), max = Math.max(...balances);
+  if (min === max) { min -= 1; max += 1; }
+  const pad = (max - min) * 0.1;
+  min -= pad; max += pad;
+  const x = (i) => padL + (i / (series.length - 1)) * (W - padL - padR);
+  const y = (v) => padT + (1 - (v - min) / (max - min)) * (H - padT - padB);
+
+  let gridlines = '';
+  for (let i=0;i<=4;i++) {
+    const v = min + (max-min)*i/4;
+    const gy = y(v);
+    gridlines += `<line x1="${padL}" y1="${gy}" x2="${W-padR}" y2="${gy}" stroke="#2c2c2a" stroke-width="1"/>`;
+    gridlines += `<text x="${padL-8}" y="${gy+4}" fill="#898781" font-size="10" text-anchor="end">${Math.round(v).toLocaleString()}</text>`;
+  }
+
+  const zeroY = y(settings.startingBalance);
+  const linePts = series.map((p,i) => `${x(i)},${y(p.balance)}`).join(' ');
+  const areaPts = `${x(0)},${zeroY} ` + linePts + ` ${x(series.length-1)},${zeroY}`;
+  const lastUp = series[series.length-1].balance >= settings.startingBalance;
+  const lineColor = lastUp ? '#0ca30c' : '#e66767';
+
+  svg.innerHTML = `
+    ${gridlines}
+    <line x1="${padL}" y1="${zeroY}" x2="${W-padR}" y2="${zeroY}" stroke="#898781" stroke-width="1" stroke-dasharray="3,3"/>
+    <polygon points="${areaPts}" fill="${lineColor}" opacity="0.12"/>
+    <polyline points="${linePts}" fill="none" stroke="${lineColor}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+    <circle cx="${x(series.length-1)}" cy="${y(series[series.length-1].balance)}" r="4" fill="${lineColor}"/>
+    <text x="${padL}" y="${H-8}" fill="#898781" font-size="10">${series[0].date}</text>
+    <text x="${W-padR}" y="${H-8}" fill="#898781" font-size="10" text-anchor="end">${series[series.length-1].date}</text>
+  `;
+}
+
+function tradeRowHtml(t, withActions) {
+  const pnl = t.pnl;
+  const pnlCell = pnl == null ? '<span style="color:var(--warning);">open</span>' : `<td class="${pnl>=0?'pos':'neg'}">${fmt$(pnl)}</td>`;
+  return `
+    <tr>
+      <td class="sym">${t.ticker}</td>
+      <td>${t.date}</td>
+      <td><span class="badge ${t.side}">${t.side}</span></td>
+      <td>${t.shares != null ? t.shares : '—'}</td>
+      <td>${t.entry != null ? Number(t.entry).toFixed(2) : '—'}</td>
+      <td>${t.exit != null ? Number(t.exit).toFixed(2) : '—'}</td>
+      ${pnl == null ? `<td><span class="badge open">open</span></td>` : `<td class="${pnl>=0?'pos':'neg'}">${fmt$(pnl)}</td>`}
+      <td>${t.setup || '—'}</td>
+      <td style="max-width:220px;">${t.notes || ''}</td>
+      ${withActions ? `<td style="white-space:nowrap;"><button class="rowbtn" onclick="editTrade('${t.id}')">Edit</button><button class="rowbtn" onclick="deleteTrade('${t.id}')">Delete</button></td>` : ''}
+    </tr>`;
+}
+
+function renderOpenTable() {
+  const rows = openTrades();
+  const el = $('tbl-open');
+  if (!rows.length) { el.innerHTML = `<tbody><tr><td class="empty">No open positions logged.</td></tr></tbody>`; return; }
+  el.innerHTML = `<thead><tr><th>Ticker</th><th>Date</th><th>Side</th><th>Shares</th><th>Entry</th><th>Exit</th><th>P&L</th><th>Setup</th><th>Notes</th></tr></thead>
+    <tbody>${rows.map(t => tradeRowHtml(t,false)).join('')}</tbody>`;
+}
+
+function renderRecentTable() {
+  const rows = trades.slice().sort((a,b)=>b.date.localeCompare(a.date)).slice(0,8);
+  const el = $('tbl-recent');
+  if (!rows.length) { el.innerHTML = `<tbody><tr><td class="empty">No trades logged yet. Add your first one on the Trade Log tab.</td></tr></tbody>`; return; }
+  el.innerHTML = `<thead><tr><th>Ticker</th><th>Date</th><th>Side</th><th>Shares</th><th>Entry</th><th>Exit</th><th>P&L</th><th>Setup</th><th>Notes</th></tr></thead>
+    <tbody>${rows.map(t => tradeRowHtml(t,false)).join('')}</tbody>`;
+}
+
+function renderLogTable(filter) {
+  const f = (filter||'').toLowerCase();
+  const rows = trades.slice().sort((a,b)=>b.date.localeCompare(a.date))
+    .filter(t => !f || t.ticker.toLowerCase().includes(f) || (t.notes||'').toLowerCase().includes(f));
+  const el = $('tbl-log');
+  if (!rows.length) { el.innerHTML = `<tbody><tr><td class="empty">No trades match.</td></tr></tbody>`; return; }
+  el.innerHTML = `<thead><tr><th>Ticker</th><th>Date</th><th>Side</th><th>Shares</th><th>Entry</th><th>Exit</th><th>P&L</th><th>Setup</th><th>Notes</th><th></th></tr></thead>
+    <tbody>${rows.map(t => tradeRowHtml(t,true)).join('')}</tbody>`;
+}
+
+function renderMonthlyBars() {
+  const rows = monthlyBreakdown();
+  const el = $('monthly-bars');
+  if (!rows.length) { el.innerHTML = `<div class="empty">No closed trades yet.</div>`; return; }
+  const maxAbs = Math.max(...rows.map(r => Math.abs(r[1])), 1);
+  el.innerHTML = rows.map(([ym, pnl]) => {
+    const label = new Date(ym+"-01T00:00:00").toLocaleString('default',{month:'short', year:'numeric'});
+    const pct = Math.min(100, Math.abs(pnl)/maxAbs*100);
+    return `<div class="month-bar-row">
+      <div>${label}</div>
+      <div class="bar-track"><div class="bar-fill ${pnl>=0?'pos':'neg'}" style="width:${pct}%; ${pnl<0?'margin-left:'+(100-pct)+'%':''}"></div></div>
+      <div class="${pnl>=0?'pos':'neg'}" style="text-align:right; font-weight:600;">${fmt$(pnl)}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderPlanNumbers() {
+  const eq = settings.startingBalance + stats().totalPnl;
+  $('plan-equity-1').textContent = fmt$(eq);
+  $('plan-risk-per-trade').textContent = fmt$(eq*0.01);
+  $('plan-daily-loss').textContent = fmt$(eq*0.03);
+  $('plan-weekly-loss').textContent = fmt$(eq*0.06);
+}
+
+// ---------------- ACTIONS ----------------
+window.editTrade = function(id) {
+  const t = trades.find(x => x.id === id);
+  if (!t) return;
+  editingId = id;
+  $('f-date').value = t.date; $('f-ticker').value = t.ticker; $('f-side').value = t.side;
+  $('f-shares').value = t.shares; $('f-entry').value = t.entry; $('f-exit').value = t.exit != null ? t.exit : '';
+  $('f-setup').value = t.setup || ''; $('f-notes').value = t.notes || '';
+  $('form-title').textContent = 'Edit Trade — ' + t.ticker;
+  $('cancel-edit-btn').style.display = 'inline-block';
+  document.querySelector('[data-tab="log"]').click();
+  window.scrollTo({top:0, behavior:'smooth'});
+};
+
+window.deleteTrade = async function(id) {
+  if (!db) { trades = trades.filter(t => t.id !== id); renderAll(); return; }
+  try { await db.doc('trades/' + id).delete(); }
+  catch (e) { $('form-msg').textContent = 'Delete failed: ' + e.message; }
+};
+
+function resetForm() {
+  editingId = null;
+  $('f-date').value = todayStr(); $('f-ticker').value = ''; $('f-side').value = 'long';
+  $('f-shares').value = ''; $('f-entry').value = ''; $('f-exit').value = '';
+  $('f-setup').value = ''; $('f-notes').value = '';
+  $('form-title').textContent = 'Add Trade';
+  $('cancel-edit-btn').style.display = 'none';
+}
+
+async function saveTrade() {
+  const ticker = $('f-ticker').value.trim().toUpperCase();
+  const entryRaw = $('f-entry').value;
+  const entry = entryRaw === '' ? null : parseFloat(entryRaw);
+  const shares = parseFloat($('f-shares').value);
+  const exitRaw = $('f-exit').value;
+  const exit = exitRaw === '' ? null : parseFloat(exitRaw);
+  const date = $('f-date').value || todayStr();
+  const side = $('f-side').value;
+
+  if (!ticker || !shares) { $('form-msg').textContent = 'Ticker and shares are required.'; return; }
+  if (exit != null && entry == null) { $('form-msg').textContent = 'Add an entry price before an exit price, so P&L can be calculated.'; return; }
+
+  const t = { ticker, date, side, shares, entry, exit,
+    status: exit != null ? 'closed' : 'open',
+    pnl: computePnl({ side, entry, exit, shares }),
+    setup: $('f-setup').value, notes: $('f-notes').value.trim() };
+
+  if (!db) {
+    if (editingId) { trades = trades.map(x => x.id === editingId ? {...t, id: editingId} : x); }
+    else { t.id = 'local-' + Date.now(); trades.push(t); }
+    resetForm(); renderAll();
+    $('form-msg').textContent = 'Saved locally (preview only — not synced).';
+    return;
+  }
+
+  try {
+    if (editingId) { await db.doc('trades/' + editingId).set(t); }
+    else { await db.collection('trades').add(t); }
+    resetForm();
+    $('form-msg').textContent = 'Saved.';
+    setTimeout(() => { if ($('form-msg')) $('form-msg').textContent = ''; }, 2500);
+  } catch (e) {
+    $('form-msg').textContent = 'Save failed: ' + e.message;
+  }
+}
+
+async function saveSettings() {
+  const s = { name: $('s-name').value.trim() || settings.name,
+    startingBalance: parseFloat($('s-balance').value) || settings.startingBalance,
+    startDate: $('s-startdate').value || settings.startDate };
+  if (!db) { settings = s; renderAll(); $('settings-msg').textContent = 'Saved locally (preview only).'; return; }
+  try { await db.doc('account/settings').set(s); $('settings-msg').textContent = 'Saved.'; setTimeout(()=>{ if($('settings-msg')) $('settings-msg').textContent=''; }, 2500); }
+  catch (e) { $('settings-msg').textContent = 'Save failed: ' + e.message; }
+}
+
+async function exportCsv() {
+  const header = ['Date','Ticker','Side','Shares','Entry','Exit','Status','PnL','Setup','Notes'];
+  const rows = trades.slice().sort((a,b)=>a.date.localeCompare(b.date)).map(t => [
+    t.date, t.ticker, t.side, t.shares, t.entry, t.exit != null ? t.exit : '', t.status,
+    t.pnl != null ? t.pnl.toFixed(2) : '', t.setup || '', (t.notes||'').replace(/"/g,'""')
+  ]);
+  const csv = [header, ...rows].map(r => r.map(c => /[",\n]/.test(String(c)) ? `"${c}"` : c).join(',')).join('\n');
+  try {
+    const downloads = await claude.use('downloads');
+    if (downloads) { await downloads.save({ filename: 'trade_log.csv', data: csv }); return; }
+  } catch (e) {}
+  // fallback: open as data URL in a new context isn't reliable in sandboxed artifacts; show inline instead
+  const w = window.open('', '_blank');
+  if (w) { w.document.write('<pre>' + csv.replace(/</g,'&lt;') + '</pre>'); }
+}
+
+// ---------------- WIRE UP ----------------
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('panel-' + btn.dataset.tab).classList.add('active');
+  });
+});
+
+$('save-trade-btn').addEventListener('click', saveTrade);
+$('cancel-edit-btn').addEventListener('click', resetForm);
+$('save-settings-btn').addEventListener('click', saveSettings);
+$('export-csv-btn').addEventListener('click', exportCsv);
+$('log-search').addEventListener('input', (e) => renderLogTable(e.target.value));
+
+resetForm();
+$('s-name').value = settings.name; $('s-balance').value = settings.startingBalance; $('s-startdate').value = settings.startDate;
+renderAll();
+initDb();
+</script>
+</body>
+</html>
