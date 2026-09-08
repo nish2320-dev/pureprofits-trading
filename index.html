@@ -206,6 +206,7 @@
         <div class="field"><label>Shares / Contracts</label><input type="number" id="f-shares" step="any" placeholder="100"></div>
         <div class="field"><label>Entry Price (optional)</label><input type="number" id="f-entry" step="any" placeholder="leave blank if unknown yet"></div>
         <div class="field"><label>Exit Price (blank = open)</label><input type="number" id="f-exit" step="any" placeholder="153.10"></div>
+        <div class="field"><label>Stop Price (optional)</label><input type="number" id="f-stop" step="any" placeholder="for position sizing"></div>
         <div class="field"><label>Setup</label>
           <select id="f-setup">
             <option value="">—</option>
@@ -219,6 +220,7 @@
         </div>
         <div class="field" style="grid-column: span 2;"><label>Notes</label><input type="text" id="f-notes" placeholder="Why you took it / how it played out"></div>
       </div>
+      <div class="note rule" id="size-suggestion" style="display:none;"></div>
       <div class="form-actions">
         <button class="btn" id="save-trade-btn">Save Trade</button>
         <button class="btn ghost" id="cancel-edit-btn" style="display:none;">Cancel edit</button>
@@ -639,9 +641,19 @@ function renderChart() {
   `;
 }
 
+function riskInfo(t) {
+  if (t.entry == null || t.stop == null || t.shares == null) return null;
+  const perShare = Math.abs(t.entry - t.stop);
+  const dollars = perShare * t.shares;
+  const eq = settings.startingBalance + stats().totalPnl;
+  const pct = eq > 0 ? dollars / eq * 100 : 0;
+  return { dollars, pct };
+}
+
 function tradeRowHtml(t, withActions) {
   const pnl = t.pnl;
-  const pnlCell = pnl == null ? '<span style="color:var(--warning);">open</span>' : `<td class="${pnl>=0?'pos':'neg'}">${fmt$(pnl)}</td>`;
+  const risk = riskInfo(t);
+  const riskCell = risk == null ? '—' : `${fmt$(risk.dollars)} <span style="color:${risk.pct > 1 ? '#ff9d9d' : 'var(--text-muted)'};">(${risk.pct.toFixed(1)}%)</span>`;
   return `
     <tr>
       <td class="sym">${t.ticker}</td>
@@ -650,6 +662,8 @@ function tradeRowHtml(t, withActions) {
       <td>${t.shares != null ? t.shares : '—'}</td>
       <td>${t.entry != null ? Number(t.entry).toFixed(2) : '—'}</td>
       <td>${t.exit != null ? Number(t.exit).toFixed(2) : '—'}</td>
+      <td>${t.stop != null ? Number(t.stop).toFixed(2) : '—'}</td>
+      <td>${riskCell}</td>
       ${pnl == null ? `<td><span class="badge open">open</span></td>` : `<td class="${pnl>=0?'pos':'neg'}">${fmt$(pnl)}</td>`}
       <td>${t.setup || '—'}</td>
       <td style="max-width:220px;">${t.notes || ''}</td>
@@ -661,7 +675,7 @@ function renderOpenTable() {
   const rows = openTrades();
   const el = $('tbl-open');
   if (!rows.length) { el.innerHTML = `<tbody><tr><td class="empty">No open positions logged.</td></tr></tbody>`; return; }
-  el.innerHTML = `<thead><tr><th>Ticker</th><th>Date</th><th>Side</th><th>Shares</th><th>Entry</th><th>Exit</th><th>P&L</th><th>Setup</th><th>Notes</th></tr></thead>
+  el.innerHTML = `<thead><tr><th>Ticker</th><th>Date</th><th>Side</th><th>Shares</th><th>Entry</th><th>Exit</th><th>Stop</th><th>Risk</th><th>P&L</th><th>Setup</th><th>Notes</th></tr></thead>
     <tbody>${rows.map(t => tradeRowHtml(t,false)).join('')}</tbody>`;
 }
 
@@ -669,7 +683,7 @@ function renderRecentTable() {
   const rows = trades.slice().sort((a,b)=>b.date.localeCompare(a.date)).slice(0,8);
   const el = $('tbl-recent');
   if (!rows.length) { el.innerHTML = `<tbody><tr><td class="empty">No trades logged yet. Add your first one on the Trade Log tab.</td></tr></tbody>`; return; }
-  el.innerHTML = `<thead><tr><th>Ticker</th><th>Date</th><th>Side</th><th>Shares</th><th>Entry</th><th>Exit</th><th>P&L</th><th>Setup</th><th>Notes</th></tr></thead>
+  el.innerHTML = `<thead><tr><th>Ticker</th><th>Date</th><th>Side</th><th>Shares</th><th>Entry</th><th>Exit</th><th>Stop</th><th>Risk</th><th>P&L</th><th>Setup</th><th>Notes</th></tr></thead>
     <tbody>${rows.map(t => tradeRowHtml(t,false)).join('')}</tbody>`;
 }
 
@@ -679,7 +693,7 @@ function renderLogTable(filter) {
     .filter(t => !f || t.ticker.toLowerCase().includes(f) || (t.notes||'').toLowerCase().includes(f));
   const el = $('tbl-log');
   if (!rows.length) { el.innerHTML = `<tbody><tr><td class="empty">No trades match.</td></tr></tbody>`; return; }
-  el.innerHTML = `<thead><tr><th>Ticker</th><th>Date</th><th>Side</th><th>Shares</th><th>Entry</th><th>Exit</th><th>P&L</th><th>Setup</th><th>Notes</th><th></th></tr></thead>
+  el.innerHTML = `<thead><tr><th>Ticker</th><th>Date</th><th>Side</th><th>Shares</th><th>Entry</th><th>Exit</th><th>Stop</th><th>Risk</th><th>P&L</th><th>Setup</th><th>Notes</th><th></th></tr></thead>
     <tbody>${rows.map(t => tradeRowHtml(t,true)).join('')}</tbody>`;
 }
 
@@ -800,11 +814,13 @@ window.editTrade = function(id) {
   editingId = id;
   $('f-date').value = t.date; $('f-ticker').value = t.ticker; $('f-side').value = t.side;
   $('f-shares').value = t.shares; $('f-entry').value = t.entry; $('f-exit').value = t.exit != null ? t.exit : '';
+  $('f-stop').value = t.stop != null ? t.stop : '';
   $('f-setup').value = t.setup || ''; $('f-notes').value = t.notes || '';
   $('form-title').textContent = 'Edit Trade — ' + t.ticker;
   $('cancel-edit-btn').style.display = 'inline-block';
   document.querySelector('[data-tab="log"]').click();
   window.scrollTo({top:0, behavior:'smooth'});
+  updateSizeSuggestion();
 };
 
 window.deleteTrade = async function(id) {
@@ -816,10 +832,25 @@ window.deleteTrade = async function(id) {
 function resetForm() {
   editingId = null;
   $('f-date').value = todayStr(); $('f-ticker').value = ''; $('f-side').value = 'long';
-  $('f-shares').value = ''; $('f-entry').value = ''; $('f-exit').value = '';
+  $('f-shares').value = ''; $('f-entry').value = ''; $('f-exit').value = ''; $('f-stop').value = '';
   $('f-setup').value = ''; $('f-notes').value = '';
   $('form-title').textContent = 'Add Trade';
   $('cancel-edit-btn').style.display = 'none';
+  updateSizeSuggestion();
+}
+
+function updateSizeSuggestion() {
+  const el = $('size-suggestion');
+  const entryRaw = $('f-entry').value, stopRaw = $('f-stop').value;
+  if (entryRaw === '' || stopRaw === '') { el.style.display = 'none'; return; }
+  const entry = parseFloat(entryRaw), stop = parseFloat(stopRaw);
+  const perShare = Math.abs(entry - stop);
+  if (!perShare) { el.style.display = 'none'; return; }
+  const eq = settings.startingBalance + stats().totalPnl;
+  const riskBudget = eq * 0.01;
+  const suggestedShares = Math.floor(riskBudget / perShare);
+  el.style.display = 'block';
+  el.textContent = `1% risk (${fmt$(riskBudget)} of ${fmt$(eq)} equity) ÷ ${fmt$(perShare)}/share stop distance ≈ ${suggestedShares.toLocaleString()} shares max, to stay within your Risk Plan.`;
 }
 
 async function saveTrade() {
@@ -829,13 +860,15 @@ async function saveTrade() {
   const shares = parseFloat($('f-shares').value);
   const exitRaw = $('f-exit').value;
   const exit = exitRaw === '' ? null : parseFloat(exitRaw);
+  const stopRaw = $('f-stop').value;
+  const stop = stopRaw === '' ? null : parseFloat(stopRaw);
   const date = $('f-date').value || todayStr();
   const side = $('f-side').value;
 
   if (!ticker || !shares) { $('form-msg').textContent = 'Ticker and shares are required.'; return; }
   if (exit != null && entry == null) { $('form-msg').textContent = 'Add an entry price before an exit price, so P&L can be calculated.'; return; }
 
-  const t = { ticker, date, side, shares, entry, exit,
+  const t = { ticker, date, side, shares, entry, exit, stop,
     status: exit != null ? 'closed' : 'open',
     pnl: computePnl({ side, entry, exit, shares }),
     setup: $('f-setup').value, notes: $('f-notes').value.trim() };
@@ -869,9 +902,9 @@ async function saveSettings() {
 }
 
 async function exportCsv() {
-  const header = ['Date','Ticker','Side','Shares','Entry','Exit','Status','PnL','Setup','Notes'];
+  const header = ['Date','Ticker','Side','Shares','Entry','Stop','Exit','Status','PnL','Setup','Notes'];
   const rows = trades.slice().sort((a,b)=>a.date.localeCompare(b.date)).map(t => [
-    t.date, t.ticker, t.side, t.shares, t.entry, t.exit != null ? t.exit : '', t.status,
+    t.date, t.ticker, t.side, t.shares, t.entry, t.stop != null ? t.stop : '', t.exit != null ? t.exit : '', t.status,
     t.pnl != null ? t.pnl.toFixed(2) : '', t.setup || '', (t.notes||'').replace(/"/g,'""')
   ]);
   const csv = [header, ...rows].map(r => r.map(c => /[",\n]/.test(String(c)) ? `"${c}"` : c).join(',')).join('\n');
@@ -899,6 +932,8 @@ $('cancel-edit-btn').addEventListener('click', resetForm);
 $('save-settings-btn').addEventListener('click', saveSettings);
 $('export-csv-btn').addEventListener('click', exportCsv);
 $('log-search').addEventListener('input', (e) => renderLogTable(e.target.value));
+$('f-entry').addEventListener('input', updateSizeSuggestion);
+$('f-stop').addEventListener('input', updateSizeSuggestion);
 
 resetForm();
 $('s-name').value = settings.name; $('s-balance').value = settings.startingBalance; $('s-startdate').value = settings.startDate;
