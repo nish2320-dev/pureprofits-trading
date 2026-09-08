@@ -140,6 +140,7 @@
 
   <div class="tabs" id="tabs">
     <button class="tab-btn active" data-tab="overview">Overview</button>
+    <button class="tab-btn" data-tab="planner">Trade Planner</button>
     <button class="tab-btn" data-tab="daily">Daily P&amp;L</button>
     <button class="tab-btn" data-tab="log">Trade Log</button>
     <button class="tab-btn" data-tab="monthly">Monthly Report</button>
@@ -164,6 +165,54 @@
     <section class="card">
       <div class="cardhead"><h2><span class="dot" style="background:#6ee7b7"></span>Recent Trades</h2></div>
       <div class="table-scroll"><table id="tbl-recent"></table></div>
+    </section>
+  </div>
+
+  <!-- TRADE PLANNER -->
+  <div class="panel" id="panel-planner">
+    <div class="note info">Upload your daily levels / news-play sheet each morning and I'll load the tickers below. Use "Analyze a Trade" before you execute — it's a planning tool, not a signal; it only reflects what's loaded for the selected date.</div>
+
+    <section class="card">
+      <div class="cardhead">
+        <h2><span class="dot" style="background:var(--warning)"></span>Watchlist</h2>
+        <input type="date" id="wl-view-date" style="background:var(--surface-2); border:1px solid var(--border); color:var(--text-primary); padding:8px 12px; border-radius:8px; font-size:13px;">
+      </div>
+      <div class="table-scroll"><table id="tbl-watchlist"></table></div>
+    </section>
+
+    <section class="card">
+      <h2><span class="dot" style="background:var(--blue)"></span>Add / Update a Level</h2>
+      <div class="form-grid">
+        <div class="field"><label>Date</label><input type="date" id="wl-date"></div>
+        <div class="field"><label>Ticker</label><input type="text" id="wl-ticker" placeholder="AAPL" style="text-transform:uppercase;"></div>
+        <div class="field"><label>Support (low)</label><input type="number" id="wl-supp-low" step="any"></div>
+        <div class="field"><label>Support (high)</label><input type="number" id="wl-supp-high" step="any"></div>
+        <div class="field"><label>Resistance (low)</label><input type="number" id="wl-res-low" step="any"></div>
+        <div class="field"><label>Resistance (high)</label><input type="number" id="wl-res-high" step="any"></div>
+        <div class="field" style="grid-column: span 2;"><label>Game Plan / Notes</label><input type="text" id="wl-notes" placeholder="e.g. Long over 34/50 curl if PDH holds, short under break"></div>
+      </div>
+      <div class="form-actions">
+        <button class="btn ghost" id="save-watchlist-btn">Save Level</button>
+        <span id="wl-msg" style="font-size:12.5px; color: var(--text-muted);"></span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2><span class="dot" style="background:#6ee7b7"></span>Analyze a Trade</h2>
+      <div class="note rule">Checks your idea against today's levels and your 1% risk rule before you pull the trigger — the math and your game plan in one place, not a signal.</div>
+      <div class="form-grid">
+        <div class="field"><label>Ticker</label><input type="text" id="p-ticker" placeholder="AAPL" style="text-transform:uppercase;"></div>
+        <div class="field"><label>Side</label>
+          <select id="p-side"><option value="long">Long</option><option value="short">Short</option></select>
+        </div>
+        <div class="field"><label>Entry</label><input type="number" id="p-entry" step="any"></div>
+        <div class="field"><label>Stop</label><input type="number" id="p-stop" step="any"></div>
+        <div class="field"><label>Target (optional — auto-fills from levels)</label><input type="number" id="p-target" step="any"></div>
+      </div>
+      <div class="form-actions">
+        <button class="btn" id="analyze-trade-btn">Analyze</button>
+      </div>
+      <div id="planner-result" style="margin-top:14px;"></div>
     </section>
   </div>
 
@@ -375,9 +424,10 @@ let trades = [
   { id: "2026-09-08-tsla-3625c", date: "2026-09-08", ticker: "TSLA", side: "long", shares: null, entry: null, exit: null, status: "closed", pnl: 379, setup: "362.5 Call exp 9/9/26 (weekly)", notes: "Corrected leg \u2014 originally mislogged as a 270 call. PnL from thinkorswim's Day P/L for this leg (+$379.00); exact fills not yet provided." },
   { id: "2026-09-08-tsla-370c", date: "2026-09-08", ticker: "TSLA", side: "long", shares: null, entry: null, exit: null, status: "closed", pnl: 163, setup: "370 Call exp 9/9/26 (weekly)", notes: "Corrected leg \u2014 originally mislogged as a 270 call. PnL from thinkorswim's Day P/L for this leg (+$163.00); exact fills not yet provided." },
 ];
+let watchlist = [];           // [{id, date, ticker, supportLow, supportHigh, resistanceLow, resistanceHigh, gameplan}]
 let settings = { name: "Pureprofits Trading Account", startingBalance: 38316.71, startDate: "2026-08-31" };
 let editingId = null;
-let unsubTrades = null, unsubSettings = null;
+let unsubTrades = null, unsubSettings = null, unsubWatchlist = null;
 
 const $ = (id) => document.getElementById(id);
 const fmt$ = (n) => (n < 0 ? "-$" : "$") + Math.abs(n).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
@@ -399,7 +449,7 @@ async function initDb() {
   if (!db) {
     $('db-banner').style.display = 'block';
     setSyncPill(false);
-    renderAll(); // trades[] already seeded with the static snapshot above
+    renderAll(); // trades[] already seeded with the static snapshot above; watchlist[] stays empty (no levels published as static data yet)
     return;
   }
   setSyncPill(true);
@@ -429,6 +479,12 @@ async function initDb() {
     trades = qsnap.docs.map(d => ({ id: d.id, ...d.data() }));
     renderAll();
   }, (err) => { console.error(err); });
+
+  const watchlistCol = db.collection("watchlist");
+  unsubWatchlist = watchlistCol.orderBy("date", "desc").onSnapshot((qsnap) => {
+    watchlist = qsnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderAll();
+  }, (err) => { console.error(err); });
 }
 
 function setSyncPill(live) {
@@ -440,6 +496,27 @@ function setSyncPill(live) {
 // ---------------- DERIVED DATA ----------------
 function closedTrades() { return trades.filter(t => t.status === 'closed').sort((a,b) => a.date.localeCompare(b.date)); }
 function openTrades() { return trades.filter(t => t.status === 'open'); }
+
+function fmtLevel(lo, hi) {
+  if (lo == null && hi == null) return '—';
+  if (lo == null) return Number(hi).toFixed(2);
+  if (hi == null) return Number(lo).toFixed(2);
+  if (lo === hi) return Number(lo).toFixed(2);
+  return Number(lo).toFixed(2) + ' – ' + Number(hi).toFixed(2);
+}
+
+function watchlistForDate(date) {
+  return watchlist.filter(w => w.date === date).sort((a,b) => a.ticker.localeCompare(b.ticker));
+}
+
+function findWatchlistEntry(ticker, date) {
+  const t = (ticker||'').trim().toUpperCase();
+  if (!t) return null;
+  const exact = watchlist.find(w => w.ticker === t && w.date === date);
+  if (exact) return exact;
+  const matches = watchlist.filter(w => w.ticker === t).sort((a,b) => b.date.localeCompare(a.date));
+  return matches[0] || null;
+}
 
 function equitySeries() {
   const closed = closedTrades();
@@ -561,6 +638,7 @@ function renderAll() {
   renderDailyTable();
   renderSetupTable();
   renderTickerTable();
+  renderWatchlistTable();
 }
 
 function renderStatTiles() {
@@ -799,6 +877,24 @@ function renderTickerTable() {
       </tr>`).join('')}</tbody>`;
 }
 
+function renderWatchlistTable() {
+  const dateEl = $('wl-view-date');
+  if (!dateEl) return;
+  const date = dateEl.value || todayStr();
+  const rows = watchlistForDate(date);
+  const el = $('tbl-watchlist');
+  if (!rows.length) { el.innerHTML = `<tbody><tr><td class="empty">No levels loaded for ${date} yet — upload today's sheet and ask me to add it, or add one below.</td></tr></tbody>`; return; }
+  el.innerHTML = `<thead><tr><th>Ticker</th><th>Support</th><th>Resistance</th><th>Game Plan / Notes</th><th></th></tr></thead>
+    <tbody>${rows.map(w => `
+      <tr>
+        <td class="sym">${w.ticker}</td>
+        <td>${fmtLevel(w.supportLow, w.supportHigh)}</td>
+        <td>${fmtLevel(w.resistanceLow, w.resistanceHigh)}</td>
+        <td style="max-width:320px;">${w.gameplan || ''}</td>
+        <td style="white-space:nowrap;"><button class="rowbtn" onclick="useForAnalysis('${w.id}')">Analyze</button><button class="rowbtn" onclick="deleteWatchlist('${w.id}')">Delete</button></td>
+      </tr>`).join('')}</tbody>`;
+}
+
 function renderPlanNumbers() {
   const eq = settings.startingBalance + stats().totalPnl;
   $('plan-equity-1').textContent = fmt$(eq);
@@ -828,6 +924,111 @@ window.deleteTrade = async function(id) {
   try { await db.doc('trades/' + id).delete(); }
   catch (e) { $('form-msg').textContent = 'Delete failed: ' + e.message; }
 };
+
+window.useForAnalysis = function(id) {
+  const w = watchlist.find(x => x.id === id);
+  if (!w) return;
+  $('p-ticker').value = w.ticker;
+  $('p-target').value = '';
+  document.getElementById('p-entry').focus();
+  window.scrollTo({ top: document.getElementById('p-entry').getBoundingClientRect().top + window.scrollY - 100, behavior: 'smooth' });
+};
+
+window.deleteWatchlist = async function(id) {
+  if (!db) { watchlist = watchlist.filter(w => w.id !== id); renderAll(); return; }
+  try { await db.doc('watchlist/' + id).delete(); }
+  catch (e) {}
+};
+
+async function saveWatchlistEntry() {
+  const ticker = $('wl-ticker').value.trim().toUpperCase();
+  const date = $('wl-date').value || todayStr();
+  if (!ticker) { $('wl-msg').textContent = 'Ticker is required.'; return; }
+  const num = (v) => v === '' ? null : parseFloat(v);
+  const entry = {
+    ticker, date,
+    supportLow: num($('wl-supp-low').value), supportHigh: num($('wl-supp-high').value),
+    resistanceLow: num($('wl-res-low').value), resistanceHigh: num($('wl-res-high').value),
+    gameplan: $('wl-notes').value.trim(),
+  };
+  const id = date + '-' + ticker.toLowerCase();
+
+  if (!db) {
+    watchlist = watchlist.filter(w => w.id !== id);
+    watchlist.push({ id, ...entry });
+    renderAll();
+    $('wl-msg').textContent = 'Saved locally (preview only).';
+    return;
+  }
+  try {
+    await db.doc('watchlist/' + id).set(entry);
+    $('wl-ticker').value = ''; $('wl-supp-low').value = ''; $('wl-supp-high').value = '';
+    $('wl-res-low').value = ''; $('wl-res-high').value = ''; $('wl-notes').value = '';
+    $('wl-msg').textContent = 'Saved.';
+    setTimeout(() => { if ($('wl-msg')) $('wl-msg').textContent = ''; }, 2500);
+  } catch (e) {
+    $('wl-msg').textContent = 'Save failed: ' + e.message;
+  }
+}
+
+function analyzeTrade() {
+  const resultEl = $('planner-result');
+  const ticker = $('p-ticker').value.trim().toUpperCase();
+  const side = $('p-side').value;
+  const entryRaw = $('p-entry').value, stopRaw = $('p-stop').value, targetRaw = $('p-target').value;
+
+  if (!ticker) { resultEl.innerHTML = `<div class="note warn">Enter a ticker first.</div>`; return; }
+  if (entryRaw === '' || stopRaw === '') { resultEl.innerHTML = `<div class="note warn">Entry and stop are both required to check risk and reward.</div>`; return; }
+
+  const entry = parseFloat(entryRaw), stop = parseFloat(stopRaw);
+  const perShareRisk = Math.abs(entry - stop);
+  if (!perShareRisk) { resultEl.innerHTML = `<div class="note warn">Entry and stop can't be the same price.</div>`; return; }
+
+  const viewDate = ($('wl-view-date').value) || todayStr();
+  const w = findWatchlistEntry(ticker, viewDate);
+
+  let target = targetRaw !== '' ? parseFloat(targetRaw) : null;
+  if (target == null && w) {
+    target = side === 'long'
+      ? (w.resistanceLow != null ? w.resistanceLow : w.resistanceHigh)
+      : (w.supportHigh != null ? w.supportHigh : w.supportLow);
+    if (target != null) $('p-target').value = target;
+  }
+
+  const rr = (target != null) ? Math.abs(target - entry) / perShareRisk : null;
+
+  const eq = settings.startingBalance + stats().totalPnl;
+  const riskBudget = eq * 0.01;
+  const suggestedShares = Math.floor(riskBudget / perShareRisk);
+
+  let watchlistBlock;
+  if (w) {
+    watchlistBlock = `<div class="rule-box"><b>${w.ticker} levels (${w.date}):</b> Support ${fmtLevel(w.supportLow, w.supportHigh)} · Resistance ${fmtLevel(w.resistanceLow, w.resistanceHigh)}${w.gameplan ? '<br>' + w.gameplan : ''}</div>`;
+  } else {
+    watchlistBlock = `<div class="rule-box">No watchlist levels loaded for ${ticker} on ${viewDate} — add one above, or upload today's sheet and ask me to load it in, for real support/resistance and game-plan context here.</div>`;
+  }
+
+  const rrOk = rr != null && rr >= 2;
+  const rrBlock = rr != null
+    ? `<div class="rule-box ${rrOk ? 'good' : 'bad'}"><b>Reward:Risk — ${rr.toFixed(2)}:1</b> ${rrOk ? '(clears a 2:1 minimum)' : '(below a 2:1 minimum — thin edge for the risk taken)'} — target ${fmt$(target)}, stop ${fmt$(stop)}.</div>`
+    : `<div class="rule-box">Add a target (or load today's levels for ${ticker}) to see reward:risk.</div>`;
+
+  const sizeBlock = `<div class="rule-box good"><b>Suggested size — ${suggestedShares.toLocaleString()} shares/contracts max.</b> 1% risk (${fmt$(riskBudget)} of ${fmt$(eq)} equity) ÷ ${fmt$(perShareRisk)}/share stop distance. Risking ${fmt$(perShareRisk * suggestedShares)} at that size.</div>`;
+
+  resultEl.innerHTML = watchlistBlock + rrBlock + sizeBlock +
+    `<button class="btn ghost" id="planner-to-log-btn" style="margin-top:6px;">Send to Trade Log →</button>`;
+
+  $('planner-to-log-btn').addEventListener('click', () => {
+    resetForm();
+    $('f-ticker').value = ticker;
+    $('f-side').value = side;
+    $('f-entry').value = entry;
+    $('f-stop').value = stop;
+    updateSizeSuggestion();
+    document.querySelector('[data-tab="log"]').click();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+}
 
 function resetForm() {
   editingId = null;
@@ -934,9 +1135,14 @@ $('export-csv-btn').addEventListener('click', exportCsv);
 $('log-search').addEventListener('input', (e) => renderLogTable(e.target.value));
 $('f-entry').addEventListener('input', updateSizeSuggestion);
 $('f-stop').addEventListener('input', updateSizeSuggestion);
+$('save-watchlist-btn').addEventListener('click', saveWatchlistEntry);
+$('analyze-trade-btn').addEventListener('click', analyzeTrade);
+$('wl-view-date').addEventListener('change', renderWatchlistTable);
 
 resetForm();
 $('s-name').value = settings.name; $('s-balance').value = settings.startingBalance; $('s-startdate').value = settings.startDate;
+$('wl-view-date').value = todayStr();
+$('wl-date').value = todayStr();
 renderAll();
 initDb();
 </script>
