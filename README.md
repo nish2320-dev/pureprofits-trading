@@ -2,7 +2,7 @@
 
 A live-updating trade log, P&L dashboard, and risk plan I use to track my day trading account.
 
-**View it here:** (GitHub Pages link — added after first deploy)
+**View it here:** https://nish2320-dev.github.io/pureprofits-trading/
 
 ## What this is
 
