@@ -309,6 +309,21 @@
       <button class="btn ghost" id="save-settings-btn">Save Settings</button>
       <span id="settings-msg" style="font-size:12.5px; color: var(--text-muted); margin-left:10px;"></span>
     </section>
+
+    <section class="card">
+      <h2><span class="dot" style="background:var(--violet)"></span>Deposits &amp; Withdrawals</h2>
+      <div class="note rule">Cash you move in or out of the account. These add to your Current Equity but don't count as trading P&amp;L — win rate, profit factor, and Daily P&amp;L stay based only on actual trades.</div>
+      <div class="form-grid">
+        <div class="field"><label>Date</label><input type="date" id="cf-date"></div>
+        <div class="field"><label>Amount ($)</label><input type="number" id="cf-amount" step="any" placeholder="64000 (use negative for a withdrawal)"></div>
+        <div class="field" style="grid-column: span 2;"><label>Note</label><input type="text" id="cf-note" placeholder="e.g. Deposit from savings"></div>
+      </div>
+      <div class="form-actions">
+        <button class="btn ghost" id="save-cashflow-btn">Add</button>
+        <span id="cf-msg" style="font-size:12.5px; color: var(--text-muted);"></span>
+      </div>
+      <div class="table-scroll" style="margin-top:12px;"><table id="tbl-cashflows"></table></div>
+    </section>
   </div>
 
   <!-- MONTHLY REPORT -->
@@ -439,11 +454,14 @@ let trades = [
   { id: "2026-09-08-tsla-370c", date: "2026-09-08", ticker: "TSLA", side: "long", shares: null, entry: null, exit: null, status: "closed", pnl: 163, setup: "370 Call exp 9/9/26 (weekly)", notes: "Corrected leg \u2014 originally mislogged as a 270 call. PnL from thinkorswim's Day P/L for this leg (+$163.00); exact fills not yet provided." },
 ];
 let watchlist = [];           // [{id, date, ticker, supportLow, supportHigh, resistanceLow, resistanceHigh, gameplan}]
+let cashflows = [
+  { id: "2026-09-09-deposit-64k", date: "2026-09-09", amount: 64000, note: "Deposit" },
+];           // [{id, date, amount, note}] — deposits (+) / withdrawals (-), outside trading P&L
 let settings = { name: "Pureprofits Trading Account", startingBalance: 38316.71, startDate: "2026-08-31" };
 let editingId = null;
 let editingWatchlistId = null;
 let wlChartDataUrl = null;    // pending/current chart image (data URL) for the watchlist form
-let unsubTrades = null, unsubSettings = null, unsubWatchlist = null;
+let unsubTrades = null, unsubSettings = null, unsubWatchlist = null, unsubCashflows = null;
 
 const $ = (id) => document.getElementById(id);
 const fmt$ = (n) => (n < 0 ? "-$" : "$") + Math.abs(n).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
@@ -465,7 +483,7 @@ async function initDb() {
   if (!db) {
     $('db-banner').style.display = 'block';
     setSyncPill(false);
-    renderAll(); // trades[] already seeded with the static snapshot above; watchlist[] stays empty (no levels published as static data yet)
+    renderAll(); // trades[]/cashflows[] already seeded with the static snapshot above; watchlist[] stays empty (no levels published as static data yet)
     return;
   }
   setSyncPill(true);
@@ -501,6 +519,12 @@ async function initDb() {
     watchlist = qsnap.docs.map(d => ({ id: d.id, ...d.data() }));
     renderAll();
   }, (err) => { console.error(err); });
+
+  const cashflowsCol = db.collection("cashflows");
+  unsubCashflows = cashflowsCol.orderBy("date", "desc").onSnapshot((qsnap) => {
+    cashflows = qsnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderAll();
+  }, (err) => { console.error(err); });
 }
 
 function setSyncPill(live) {
@@ -534,11 +558,19 @@ function findWatchlistEntry(ticker, date) {
   return matches[0] || null;
 }
 
+function netCashFlow() {
+  return cashflows.reduce((s,c) => s + (c.amount || 0), 0);
+}
+
 function equitySeries() {
   const closed = closedTrades();
+  const events = [
+    ...closed.map(t => ({ date: t.date, delta: t.pnl || 0 })),
+    ...cashflows.map(c => ({ date: c.date, delta: c.amount || 0 })),
+  ].sort((a, b) => a.date.localeCompare(b.date));
   let bal = settings.startingBalance;
   const pts = [{ date: settings.startDate, balance: bal }];
-  closed.forEach(t => { bal += (t.pnl || 0); pts.push({ date: t.date, balance: bal }); });
+  events.forEach(e => { bal += e.delta; pts.push({ date: e.date, balance: bal }); });
   return pts;
 }
 
@@ -562,8 +594,9 @@ function stats() {
   const ymNow = now.toISOString().slice(0,7);
   const thisMonthPnl = closed.filter(t => (t.date||"").slice(0,7) === ymNow).reduce((s,t)=>s+t.pnl,0);
 
-  const currentEquity = settings.startingBalance + totalPnl;
-  return { totalPnl, totalPnlPct: totalPnl/settings.startingBalance*100, currentEquity, winRate, avgWin, avgLoss,
+  const cashFlow = netCashFlow();
+  const currentEquity = settings.startingBalance + totalPnl + cashFlow;
+  return { totalPnl, totalPnlPct: totalPnl/settings.startingBalance*100, currentEquity, netCashFlow: cashFlow, winRate, avgWin, avgLoss,
     profitFactor, maxDD, thisMonthPnl, totalTrades: closed.length, openCount: openTrades().length };
 }
 
@@ -655,13 +688,14 @@ function renderAll() {
   renderSetupTable();
   renderTickerTable();
   renderWatchlistTable();
+  renderCashflowsTable();
 }
 
 function renderStatTiles() {
   const s = stats();
   const tiles = [
-    { label: "Current Equity", value: fmt$(s.currentEquity), sub: settings.name },
-    { label: "Total P&L", value: fmt$(s.totalPnl), cls: s.totalPnl>=0?'good':'bad', sub: fmtPct(s.totalPnlPct) + " since " + settings.startDate },
+    { label: "Current Equity", value: fmt$(s.currentEquity), sub: s.netCashFlow ? fmt$(settings.startingBalance) + " start + " + fmt$(s.netCashFlow) + " net deposits" : settings.name },
+    { label: "Total P&L", value: fmt$(s.totalPnl), cls: s.totalPnl>=0?'good':'bad', sub: fmtPct(s.totalPnlPct) + " since " + settings.startDate + " (trading only)" },
     { label: "This Month", value: fmt$(s.thisMonthPnl), cls: s.thisMonthPnl>=0?'good':'bad', sub: new Date().toLocaleString('default',{month:'long',year:'numeric'}) },
     { label: "Win Rate", value: s.totalTrades ? s.winRate.toFixed(1)+"%" : "—", sub: s.totalTrades + " closed trades" },
     { label: "Profit Factor", value: isFinite(s.profitFactor) ? s.profitFactor.toFixed(2) : "∞", sub: "gross win ÷ gross loss" },
@@ -680,8 +714,9 @@ function renderReportTiles() {
   const s = stats();
   const tiles = [
     { label: "Starting Balance", value: fmt$(settings.startingBalance), sub: settings.startDate },
+    { label: "Net Deposits", value: fmt$(s.netCashFlow), sub: cashflows.length + " deposit/withdrawal entries" },
     { label: "Current Equity", value: fmt$(s.currentEquity), sub: "as of latest trade" },
-    { label: "Total Return", value: fmtPct(s.totalPnlPct), cls: s.totalPnl>=0?'good':'bad', sub: fmt$(s.totalPnl) + " net" },
+    { label: "Total Return (trading)", value: fmtPct(s.totalPnlPct), cls: s.totalPnl>=0?'good':'bad', sub: fmt$(s.totalPnl) + " net, excludes deposits" },
     { label: "Max Drawdown", value: s.maxDD.toFixed(1)+"%", sub: "worst peak-to-trough" },
     { label: "Win Rate", value: s.totalTrades ? s.winRate.toFixed(1)+"%" : "—", sub: s.totalTrades + " trades" },
     { label: "Avg Win / Avg Loss", value: fmt$(s.avgWin) + " / " + fmt$(s.avgLoss), sub: "per closed trade" },
@@ -909,6 +944,21 @@ function renderWatchlistTable() {
         <td>${fmtLevel(w.resistanceLow, w.resistanceHigh)}</td>
         <td style="max-width:320px;">${w.gameplan || ''}</td>
         <td style="white-space:nowrap;"><button class="rowbtn" onclick="useForAnalysis('${w.id}')">Analyze</button><button class="rowbtn" onclick="editWatchlist('${w.id}')">Edit</button><button class="rowbtn" onclick="deleteWatchlist('${w.id}')">Delete</button></td>
+      </tr>`).join('')}</tbody>`;
+}
+
+function renderCashflowsTable() {
+  const el = $('tbl-cashflows');
+  if (!el) return;
+  const rows = cashflows.slice().sort((a,b) => b.date.localeCompare(a.date));
+  if (!rows.length) { el.innerHTML = `<tbody><tr><td class="empty">No deposits or withdrawals logged yet.</td></tr></tbody>`; return; }
+  el.innerHTML = `<thead><tr><th>Date</th><th>Amount</th><th>Note</th><th></th></tr></thead>
+    <tbody>${rows.map(c => `
+      <tr>
+        <td class="sym">${c.date}</td>
+        <td class="${c.amount >= 0 ? 'pos' : 'neg'}">${c.amount >= 0 ? '+' : ''}${fmt$(c.amount)}</td>
+        <td style="max-width:320px;">${c.note || ''}</td>
+        <td style="white-space:nowrap;"><button class="rowbtn" onclick="deleteCashflow('${c.id}')">Delete</button></td>
       </tr>`).join('')}</tbody>`;
 }
 
@@ -1230,6 +1280,38 @@ async function saveSettings() {
   catch (e) { $('settings-msg').textContent = 'Save failed: ' + e.message; }
 }
 
+window.deleteCashflow = async function(id) {
+  if (!db) { cashflows = cashflows.filter(c => c.id !== id); renderAll(); return; }
+  try { await db.doc('cashflows/' + id).delete(); }
+  catch (e) {}
+};
+
+async function saveCashflow() {
+  const date = $('cf-date').value || todayStr();
+  const amountRaw = $('cf-amount').value;
+  if (amountRaw === '') { $('cf-msg').textContent = 'Enter an amount (positive for a deposit, negative for a withdrawal).'; return; }
+  const amount = parseFloat(amountRaw);
+  if (!amount) { $('cf-msg').textContent = 'Amount can\'t be zero.'; return; }
+  const entry = { date, amount, note: $('cf-note').value.trim() };
+
+  if (!db) {
+    entry.id = 'local-' + Date.now();
+    cashflows.push(entry);
+    renderAll();
+    $('cf-amount').value = ''; $('cf-note').value = '';
+    $('cf-msg').textContent = 'Saved locally (preview only).';
+    return;
+  }
+  try {
+    await db.collection('cashflows').add(entry);
+    $('cf-amount').value = ''; $('cf-note').value = '';
+    $('cf-msg').textContent = 'Saved.';
+    setTimeout(() => { if ($('cf-msg')) $('cf-msg').textContent = ''; }, 2500);
+  } catch (e) {
+    $('cf-msg').textContent = 'Save failed: ' + e.message;
+  }
+}
+
 async function exportCsv() {
   const header = ['Date','Ticker','Side','Shares','Entry','Stop','Exit','Status','PnL','Setup','Notes'];
   const rows = trades.slice().sort((a,b)=>a.date.localeCompare(b.date)).map(t => [
@@ -1269,11 +1351,13 @@ $('wl-chart-file').addEventListener('change', handleChartFileChange);
 $('wl-chart-clear-btn').addEventListener('click', clearChartImage);
 $('analyze-trade-btn').addEventListener('click', analyzeTrade);
 $('wl-view-date').addEventListener('change', renderWatchlistTable);
+$('save-cashflow-btn').addEventListener('click', saveCashflow);
 
 resetForm();
 $('s-name').value = settings.name; $('s-balance').value = settings.startingBalance; $('s-startdate').value = settings.startDate;
 $('wl-view-date').value = todayStr();
 $('wl-date').value = todayStr();
+$('cf-date').value = todayStr();
 renderAll();
 initDb();
 </script>
