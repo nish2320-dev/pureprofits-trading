@@ -140,6 +140,7 @@
 
   <div class="tabs" id="tabs">
     <button class="tab-btn active" data-tab="overview">Overview</button>
+    <button class="tab-btn" data-tab="watchlist">Daily Watchlist</button>
     <button class="tab-btn" data-tab="planner">Trade Planner</button>
     <button class="tab-btn" data-tab="daily">Daily P&amp;L</button>
     <button class="tab-btn" data-tab="log">Trade Log</button>
@@ -168,9 +169,9 @@
     </section>
   </div>
 
-  <!-- TRADE PLANNER -->
-  <div class="panel" id="panel-planner">
-    <div class="note info">Upload your daily levels / news-play sheet each morning and I'll load the tickers below. Use "Analyze a Trade" before you execute — it's a planning tool, not a signal; it only reflects what's loaded for the selected date.</div>
+  <!-- DAILY WATCHLIST -->
+  <div class="panel" id="panel-watchlist">
+    <div class="note info">Add today's tickers and levels below (type them in, or tell me the numbers / upload your levels sheet and I'll add them for you), with a chart screenshot per ticker if you want one. This feeds the Trade Planner's "Analyze a Trade" tool automatically.</div>
 
     <section class="card">
       <div class="cardhead">
@@ -181,7 +182,7 @@
     </section>
 
     <section class="card">
-      <h2><span class="dot" style="background:var(--blue)"></span>Add / Update a Level</h2>
+      <h2><span class="dot" style="background:var(--blue)"></span><span id="wl-form-title">Add / Update a Level</span></h2>
       <div class="form-grid">
         <div class="field"><label>Date</label><input type="date" id="wl-date"></div>
         <div class="field"><label>Ticker</label><input type="text" id="wl-ticker" placeholder="AAPL" style="text-transform:uppercase;"></div>
@@ -190,16 +191,29 @@
         <div class="field"><label>Resistance (low)</label><input type="number" id="wl-res-low" step="any"></div>
         <div class="field"><label>Resistance (high)</label><input type="number" id="wl-res-high" step="any"></div>
         <div class="field" style="grid-column: span 2;"><label>Game Plan / Notes</label><input type="text" id="wl-notes" placeholder="e.g. Long over 34/50 curl if PDH holds, short under break"></div>
+        <div class="field" style="grid-column: span 2;">
+          <label>Chart Screenshot (optional)</label>
+          <input type="file" id="wl-chart-file" accept="image/*">
+          <div id="wl-chart-preview-wrap" style="display:none; margin-top:8px;">
+            <img id="wl-chart-preview" style="max-width:220px; max-height:140px; border-radius:8px; border:1px solid var(--border); display:block;">
+            <button type="button" class="rowbtn" id="wl-chart-clear-btn" style="margin-top:6px;">Remove image</button>
+          </div>
+          <div id="wl-chart-status" style="font-size:11.5px; color: var(--text-muted); margin-top:4px;"></div>
+        </div>
       </div>
       <div class="form-actions">
         <button class="btn ghost" id="save-watchlist-btn">Save Level</button>
+        <button class="btn ghost" id="cancel-watchlist-edit-btn" style="display:none;">Cancel edit</button>
         <span id="wl-msg" style="font-size:12.5px; color: var(--text-muted);"></span>
       </div>
     </section>
+  </div>
 
+  <!-- TRADE PLANNER -->
+  <div class="panel" id="panel-planner">
     <section class="card">
       <h2><span class="dot" style="background:#6ee7b7"></span>Analyze a Trade</h2>
-      <div class="note rule">Checks your idea against today's levels and your 1% risk rule before you pull the trigger — the math and your game plan in one place, not a signal.</div>
+      <div class="note rule">Checks your idea against today's levels (from the Daily Watchlist tab) and your 1% risk rule before you pull the trigger — the math and your game plan in one place, not a signal.</div>
       <div class="form-grid">
         <div class="field"><label>Ticker</label><input type="text" id="p-ticker" placeholder="AAPL" style="text-transform:uppercase;"></div>
         <div class="field"><label>Side</label>
@@ -427,6 +441,8 @@ let trades = [
 let watchlist = [];           // [{id, date, ticker, supportLow, supportHigh, resistanceLow, resistanceHigh, gameplan}]
 let settings = { name: "Pureprofits Trading Account", startingBalance: 38316.71, startDate: "2026-08-31" };
 let editingId = null;
+let editingWatchlistId = null;
+let wlChartDataUrl = null;    // pending/current chart image (data URL) for the watchlist form
 let unsubTrades = null, unsubSettings = null, unsubWatchlist = null;
 
 const $ = (id) => document.getElementById(id);
@@ -884,14 +900,15 @@ function renderWatchlistTable() {
   const rows = watchlistForDate(date);
   const el = $('tbl-watchlist');
   if (!rows.length) { el.innerHTML = `<tbody><tr><td class="empty">No levels loaded for ${date} yet — upload today's sheet and ask me to add it, or add one below.</td></tr></tbody>`; return; }
-  el.innerHTML = `<thead><tr><th>Ticker</th><th>Support</th><th>Resistance</th><th>Game Plan / Notes</th><th></th></tr></thead>
+  el.innerHTML = `<thead><tr><th>Chart</th><th>Ticker</th><th>Support</th><th>Resistance</th><th>Game Plan / Notes</th><th></th></tr></thead>
     <tbody>${rows.map(w => `
       <tr>
+        <td>${w.chartImage ? `<img src="${w.chartImage}" style="width:64px; height:42px; object-fit:cover; border-radius:6px; cursor:pointer; border:1px solid var(--border);" onclick="showChartLightbox('${w.id}')">` : '<span style="color:var(--text-muted);">—</span>'}</td>
         <td class="sym">${w.ticker}</td>
         <td>${fmtLevel(w.supportLow, w.supportHigh)}</td>
         <td>${fmtLevel(w.resistanceLow, w.resistanceHigh)}</td>
         <td style="max-width:320px;">${w.gameplan || ''}</td>
-        <td style="white-space:nowrap;"><button class="rowbtn" onclick="useForAnalysis('${w.id}')">Analyze</button><button class="rowbtn" onclick="deleteWatchlist('${w.id}')">Delete</button></td>
+        <td style="white-space:nowrap;"><button class="rowbtn" onclick="useForAnalysis('${w.id}')">Analyze</button><button class="rowbtn" onclick="editWatchlist('${w.id}')">Edit</button><button class="rowbtn" onclick="deleteWatchlist('${w.id}')">Delete</button></td>
       </tr>`).join('')}</tbody>`;
 }
 
@@ -928,10 +945,11 @@ window.deleteTrade = async function(id) {
 window.useForAnalysis = function(id) {
   const w = watchlist.find(x => x.id === id);
   if (!w) return;
+  document.querySelector('[data-tab="planner"]').click();
   $('p-ticker').value = w.ticker;
   $('p-target').value = '';
+  window.scrollTo({top:0, behavior:'smooth'});
   document.getElementById('p-entry').focus();
-  window.scrollTo({ top: document.getElementById('p-entry').getBoundingClientRect().top + window.scrollY - 100, behavior: 'smooth' });
 };
 
 window.deleteWatchlist = async function(id) {
@@ -939,6 +957,111 @@ window.deleteWatchlist = async function(id) {
   try { await db.doc('watchlist/' + id).delete(); }
   catch (e) {}
 };
+
+window.showChartLightbox = function(id) {
+  const w = watchlist.find(x => x.id === id);
+  if (!w || !w.chartImage) return;
+  const win = window.open('', '_blank');
+  if (win) {
+    win.document.write(`<title>${w.ticker} chart — ${w.date}</title><body style="margin:0;background:#111;display:flex;align-items:center;justify-content:center;min-height:100vh;"><img src="${w.chartImage}" style="max-width:100%;max-height:100vh;"></body>`);
+  }
+};
+
+window.editWatchlist = function(id) {
+  const w = watchlist.find(x => x.id === id);
+  if (!w) return;
+  editingWatchlistId = id;
+  $('wl-date').value = w.date; $('wl-ticker').value = w.ticker;
+  $('wl-supp-low').value = w.supportLow != null ? w.supportLow : '';
+  $('wl-supp-high').value = w.supportHigh != null ? w.supportHigh : '';
+  $('wl-res-low').value = w.resistanceLow != null ? w.resistanceLow : '';
+  $('wl-res-high').value = w.resistanceHigh != null ? w.resistanceHigh : '';
+  $('wl-notes').value = w.gameplan || '';
+  wlChartDataUrl = w.chartImage || null;
+  $('wl-chart-file').value = '';
+  if (wlChartDataUrl) {
+    $('wl-chart-preview').src = wlChartDataUrl;
+    $('wl-chart-preview-wrap').style.display = 'block';
+    $('wl-chart-status').textContent = 'Existing chart loaded — pick a new file to replace it.';
+  } else {
+    $('wl-chart-preview-wrap').style.display = 'none';
+    $('wl-chart-status').textContent = '';
+  }
+  $('wl-form-title').textContent = 'Edit Level — ' + w.ticker;
+  $('cancel-watchlist-edit-btn').style.display = 'inline-block';
+  document.querySelector('[data-tab="watchlist"]').click();
+  window.scrollTo({top:0, behavior:'smooth'});
+};
+
+function resetWatchlistForm() {
+  editingWatchlistId = null;
+  wlChartDataUrl = null;
+  $('wl-ticker').value = ''; $('wl-supp-low').value = ''; $('wl-supp-high').value = '';
+  $('wl-res-low').value = ''; $('wl-res-high').value = ''; $('wl-notes').value = '';
+  $('wl-chart-file').value = '';
+  $('wl-chart-preview').src = '';
+  $('wl-chart-preview-wrap').style.display = 'none';
+  $('wl-chart-status').textContent = '';
+  $('wl-form-title').textContent = 'Add / Update a Level';
+  $('cancel-watchlist-edit-btn').style.display = 'none';
+}
+
+// Downscale + re-encode an image file client-side so it fits the 256 KiB db document limit.
+function compressImageFile(file, maxWidth, quality) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('could not read file'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('could not decode image'));
+      img.onload = () => {
+        const scale = Math.min(1, maxWidth / img.width);
+        const w = Math.max(1, Math.round(img.width * scale));
+        const h = Math.max(1, Math.round(img.height * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+async function handleChartFileChange(e) {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  $('wl-chart-status').textContent = 'Compressing…';
+  try {
+    let width = 480, quality = 0.6;
+    let dataUrl = await compressImageFile(file, width, quality);
+    let guard = 0;
+    while (dataUrl.length > 200000 && guard < 6) {
+      if (quality > 0.35) quality -= 0.15; else width = Math.round(width * 0.75);
+      dataUrl = await compressImageFile(file, width, quality);
+      guard++;
+    }
+    if (dataUrl.length > 250000) {
+      $('wl-chart-status').textContent = 'That image is still too large after compression — try a tighter crop or a smaller screenshot.';
+      return;
+    }
+    wlChartDataUrl = dataUrl;
+    $('wl-chart-preview').src = dataUrl;
+    $('wl-chart-preview-wrap').style.display = 'block';
+    $('wl-chart-status').textContent = `Ready (${Math.round(dataUrl.length / 1024)} KB).`;
+  } catch (err) {
+    $('wl-chart-status').textContent = 'Could not process that image: ' + err.message;
+  }
+}
+
+function clearChartImage() {
+  wlChartDataUrl = null;
+  $('wl-chart-file').value = '';
+  $('wl-chart-preview').src = '';
+  $('wl-chart-preview-wrap').style.display = 'none';
+  $('wl-chart-status').textContent = '';
+}
 
 async function saveWatchlistEntry() {
   const ticker = $('wl-ticker').value.trim().toUpperCase();
@@ -950,20 +1073,24 @@ async function saveWatchlistEntry() {
     supportLow: num($('wl-supp-low').value), supportHigh: num($('wl-supp-high').value),
     resistanceLow: num($('wl-res-low').value), resistanceHigh: num($('wl-res-high').value),
     gameplan: $('wl-notes').value.trim(),
+    chartImage: wlChartDataUrl || null,
   };
-  const id = date + '-' + ticker.toLowerCase();
+  const newId = date + '-' + ticker.toLowerCase();
+  const oldId = editingWatchlistId;
 
   if (!db) {
-    watchlist = watchlist.filter(w => w.id !== id);
-    watchlist.push({ id, ...entry });
+    if (oldId && oldId !== newId) watchlist = watchlist.filter(w => w.id !== oldId);
+    watchlist = watchlist.filter(w => w.id !== newId);
+    watchlist.push({ id: newId, ...entry });
+    resetWatchlistForm();
     renderAll();
     $('wl-msg').textContent = 'Saved locally (preview only).';
     return;
   }
   try {
-    await db.doc('watchlist/' + id).set(entry);
-    $('wl-ticker').value = ''; $('wl-supp-low').value = ''; $('wl-supp-high').value = '';
-    $('wl-res-low').value = ''; $('wl-res-high').value = ''; $('wl-notes').value = '';
+    if (oldId && oldId !== newId) { await db.doc('watchlist/' + oldId).delete(); }
+    await db.doc('watchlist/' + newId).set(entry);
+    resetWatchlistForm();
     $('wl-msg').textContent = 'Saved.';
     setTimeout(() => { if ($('wl-msg')) $('wl-msg').textContent = ''; }, 2500);
   } catch (e) {
@@ -1003,7 +1130,8 @@ function analyzeTrade() {
 
   let watchlistBlock;
   if (w) {
-    watchlistBlock = `<div class="rule-box"><b>${w.ticker} levels (${w.date}):</b> Support ${fmtLevel(w.supportLow, w.supportHigh)} · Resistance ${fmtLevel(w.resistanceLow, w.resistanceHigh)}${w.gameplan ? '<br>' + w.gameplan : ''}</div>`;
+    const chartThumb = w.chartImage ? `<img src="${w.chartImage}" style="width:96px; height:64px; object-fit:cover; border-radius:6px; border:1px solid var(--border); cursor:pointer; float:right; margin-left:10px;" onclick="showChartLightbox('${w.id}')">` : '';
+    watchlistBlock = `<div class="rule-box">${chartThumb}<b>${w.ticker} levels (${w.date}):</b> Support ${fmtLevel(w.supportLow, w.supportHigh)} · Resistance ${fmtLevel(w.resistanceLow, w.resistanceHigh)}${w.gameplan ? '<br>' + w.gameplan : ''}</div>`;
   } else {
     watchlistBlock = `<div class="rule-box">No watchlist levels loaded for ${ticker} on ${viewDate} — add one above, or upload today's sheet and ask me to load it in, for real support/resistance and game-plan context here.</div>`;
   }
@@ -1136,6 +1264,9 @@ $('log-search').addEventListener('input', (e) => renderLogTable(e.target.value))
 $('f-entry').addEventListener('input', updateSizeSuggestion);
 $('f-stop').addEventListener('input', updateSizeSuggestion);
 $('save-watchlist-btn').addEventListener('click', saveWatchlistEntry);
+$('cancel-watchlist-edit-btn').addEventListener('click', resetWatchlistForm);
+$('wl-chart-file').addEventListener('change', handleChartFileChange);
+$('wl-chart-clear-btn').addEventListener('click', clearChartImage);
 $('analyze-trade-btn').addEventListener('click', analyzeTrade);
 $('wl-view-date').addEventListener('change', renderWatchlistTable);
 
